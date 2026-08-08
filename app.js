@@ -1,4 +1,6 @@
 const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwMS-IvWMreIMCc9T3kwHQzEnjOKDCeg5GzL6RUF4ob-_1UMuzNNYhNS-r34O8qqJ6HMg/exec";
+const DUPLICATE_MESSAGE = "此家庭已重複輸入，請確認後再輸入，如有疑問請洽明鏡。";
+const SUBMITTED_FAMILIES_KEY = "activityFeeSubmittedFamilies";
 
 const currencyFormatter = new Intl.NumberFormat("zh-TW", {
   style: "currency",
@@ -28,6 +30,23 @@ transferDate.value = `${yyyy}-${mm}-${dd}`;
 
 function normalizeFamilyId(value) {
   return String(value || "").trim().replace(/^0+(\d)/, "$1");
+}
+
+function getSubmittedFamilies() {
+  return JSON.parse(localStorage.getItem(SUBMITTED_FAMILIES_KEY) || "[]");
+}
+
+function hasSubmittedFamily(familyId) {
+  return getSubmittedFamilies().includes(normalizeFamilyId(familyId));
+}
+
+function markSubmittedFamily(familyId) {
+  const normalizedFamilyId = normalizeFamilyId(familyId);
+  const families = getSubmittedFamilies();
+  if (!families.includes(normalizedFamilyId)) {
+    families.push(normalizedFamilyId);
+    localStorage.setItem(SUBMITTED_FAMILIES_KEY, JSON.stringify(families));
+  }
 }
 
 function showMessage(text) {
@@ -96,6 +115,11 @@ lookupForm.addEventListener("submit", async (event) => {
     transferAmount.value = total;
     renderRows(rows);
     resultPanel.hidden = false;
+
+    if (hasSubmittedFamily(familyId)) {
+      reportStatus.textContent = DUPLICATE_MESSAGE;
+      reportStatus.className = "report-status warn";
+    }
   } catch (error) {
     resultPanel.hidden = true;
     showMessage("查詢暫時失敗，請稍後再試。");
@@ -109,8 +133,15 @@ reportForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const submitButton = reportForm.querySelector("button");
   const payload = Object.fromEntries(new FormData(reportForm).entries());
+  payload.familyId = normalizeFamilyId(payload.familyId);
   payload.expectedAmount = String(currentExpectedAmount);
   payload.submittedAt = new Date().toISOString();
+
+  if (hasSubmittedFamily(payload.familyId)) {
+    reportStatus.textContent = DUPLICATE_MESSAGE;
+    reportStatus.className = "report-status warn";
+    return;
+  }
 
   if (!/^\d{5}$/.test(payload.lastFive)) {
     reportStatus.textContent = "轉帳後五碼請輸入 5 位數字。";
@@ -126,6 +157,7 @@ reportForm.addEventListener("submit", async (event) => {
     const url = new URL(GOOGLE_APPS_SCRIPT_URL);
     Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
     const finalUrl = openGoogleConfirmation(url.toString());
+    markSubmittedFamily(payload.familyId);
     reportStatus.innerHTML = `已開啟 Google 回報確認頁。若沒有自動開啟，請<a href="${finalUrl}" target="_blank" rel="noopener noreferrer">點這裡手動送出</a>。`;
     reportStatus.className = "report-status ok";
     reportForm.reset();
