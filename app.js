@@ -125,8 +125,8 @@ reportForm.addEventListener("submit", async (event) => {
   try {
     const url = new URL(GOOGLE_APPS_SCRIPT_URL);
     Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
-    await submitWithBeacon(url.toString());
-    reportStatus.textContent = "已送出回報至 Google 試算表。";
+    const finalUrl = openGoogleConfirmation(url.toString());
+    reportStatus.innerHTML = `已開啟 Google 回報確認頁。若沒有自動開啟，請<a href="${finalUrl}" target="_blank" rel="noopener noreferrer">點這裡手動送出</a>。`;
     reportStatus.className = "report-status ok";
     reportForm.reset();
     transferDate.value = `${yyyy}-${mm}-${dd}`;
@@ -140,20 +140,16 @@ reportForm.addEventListener("submit", async (event) => {
   }
 });
 
-function submitWithBeacon(url) {
-  return new Promise((resolve) => {
-    const image = new Image();
-    const done = () => {
-      image.onload = null;
-      image.onerror = null;
-      resolve();
-    };
-    const separator = url.includes("?") ? "&" : "?";
-    image.onload = done;
-    image.onerror = done;
-    image.src = `${url}${separator}_=${Date.now()}`;
-    setTimeout(done, 3000);
-  });
+function openGoogleConfirmation(url) {
+  const separator = url.includes("?") ? "&" : "?";
+  const finalUrl = `${url}${separator}_=${Date.now()}`;
+  const opened = window.open(finalUrl, "_blank", "noopener,noreferrer");
+
+  if (!opened) {
+    window.location.href = finalUrl;
+  }
+
+  return finalUrl;
 }
 
 async function lookupFamily(familyId) {
