@@ -156,9 +156,9 @@ reportForm.addEventListener("submit", async (event) => {
   try {
     const url = new URL(GOOGLE_APPS_SCRIPT_URL);
     Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
-    const finalUrl = openGoogleConfirmation(url.toString());
+    await submitInBackground(url.toString());
     markSubmittedFamily(payload.familyId);
-    reportStatus.innerHTML = `已開啟 Google 回報確認頁。若沒有自動開啟，請<a href="${finalUrl}" target="_blank" rel="noopener noreferrer">點這裡手動送出</a>。`;
+    reportStatus.textContent = "已送出回報，請至 Google 試算表重新整理確認。";
     reportStatus.className = "report-status ok";
     reportForm.reset();
     transferDate.value = `${yyyy}-${mm}-${dd}`;
@@ -172,16 +172,29 @@ reportForm.addEventListener("submit", async (event) => {
   }
 });
 
-function openGoogleConfirmation(url) {
+async function submitInBackground(url) {
   const separator = url.includes("?") ? "&" : "?";
   const finalUrl = `${url}${separator}_=${Date.now()}`;
-  const opened = window.open(finalUrl, "_blank", "noopener,noreferrer");
 
-  if (!opened) {
-    window.location.href = finalUrl;
+  try {
+    await fetch(finalUrl, {
+      method: "GET",
+      mode: "no-cors",
+      cache: "no-store",
+    });
+  } catch (error) {
+    await submitWithImage(finalUrl);
   }
+}
 
-  return finalUrl;
+function submitWithImage(url) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = resolve;
+    image.onerror = resolve;
+    image.src = url;
+    setTimeout(resolve, 3000);
+  });
 }
 
 async function lookupFamily(familyId) {
