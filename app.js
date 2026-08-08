@@ -45,7 +45,7 @@ function cell(value) {
   if (value) {
     td.textContent = value;
   } else {
-    td.textContent = "－";
+    td.textContent = "-";
     td.className = "empty-cell";
   }
   return td;
@@ -123,15 +123,6 @@ reportForm.addEventListener("submit", async (event) => {
   reportStatus.className = "report-status";
 
   try {
-    if (!GOOGLE_APPS_SCRIPT_URL) {
-      const savedReports = JSON.parse(localStorage.getItem("activityFeeReports") || "[]");
-      savedReports.push(payload);
-      localStorage.setItem("activityFeeReports", JSON.stringify(savedReports));
-      reportStatus.textContent = "已暫存在此瀏覽器。設定 Google Apps Script 網址後即可直接寫入 Google 試算表。";
-      reportStatus.className = "report-status warn";
-      return;
-    }
-
     const url = new URL(GOOGLE_APPS_SCRIPT_URL);
     Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
     await submitWithHiddenFrame(url.toString());
@@ -142,7 +133,7 @@ reportForm.addEventListener("submit", async (event) => {
     reportFamilyId.value = payload.familyId;
     transferAmount.value = currentExpectedAmount;
   } catch (error) {
-    reportStatus.textContent = "送出失敗，請稍後再試或確認 Google Apps Script 網址。";
+    reportStatus.textContent = "送出失敗，請稍後再試。";
     reportStatus.className = "report-status warn";
   } finally {
     submitButton.disabled = false;
@@ -164,7 +155,11 @@ function submitWithHiddenFrame(url) {
   });
 }
 
-function lookupFamily(familyId) {
+async function lookupFamily(familyId) {
+  if (window.ACTIVITY_FEE_ENCRYPTED_DATA) {
+    return lookupEncryptedFamily(familyId);
+  }
+
   return new Promise((resolve, reject) => {
     const callbackName = `activityFeeLookup_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const script = document.createElement("script");
@@ -198,4 +193,60 @@ function lookupFamily(familyId) {
     script.src = url.toString();
     document.body.appendChild(script);
   });
+}
+
+async function lookupEncryptedFamily(familyId) {
+  const normalizedFamilyId = normalizeFamilyId(familyId);
+  const lookupId = await sha256Hex(`115-taoyi-activity-fee-lookup:${normalizedFamilyId}`);
+  const entry = window.ACTIVITY_FEE_ENCRYPTED_DATA.find((item) => item.id === lookupId);
+
+  if (!entry) {
+    return { ok: true, familyId: normalizedFamilyId, rows: [], total: 0 };
+  }
+
+  const keyBytes = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`115-taoyi-activity-fee-key:${normalizedFamilyId}`)
+  );
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(entry.iv) },
+    cryptoKey,
+    base64ToBytes(entry.data)
+  );
+  const payload = JSON.parse(new TextDecoder().decode(decrypted));
+  const rows = payload.rows || [];
+
+  return {
+    ok: true,
+    familyId: normalizedFamilyId,
+    rows,
+    total: calculateTotal(rows),
+  };
+}
+
+function calculateTotal(rows) {
+  return rows.reduce((sum, row) => {
+    let next = sum;
+    if (row.childName) next += 2400;
+    if (row.adultFee) next += 500;
+    if (row.extraFee) next += 350;
+    return next;
+  }, 0);
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
