@@ -1,6 +1,5 @@
 const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwMS-IvWMreIMCc9T3kwHQzEnjOKDCeg5GzL6RUF4ob-_1UMuzNNYhNS-r34O8qqJ6HMg/exec";
 const DUPLICATE_MESSAGE = "此家庭已重複輸入，請確認後再輸入，如有疑問請洽明鏡。";
-const SUBMITTED_FAMILIES_KEY = "activityFeeSubmittedFamilies";
 
 const currencyFormatter = new Intl.NumberFormat("zh-TW", {
   style: "currency",
@@ -30,23 +29,6 @@ transferDate.value = `${yyyy}-${mm}-${dd}`;
 
 function normalizeFamilyId(value) {
   return String(value || "").trim().replace(/^0+(\d)/, "$1");
-}
-
-function getSubmittedFamilies() {
-  return JSON.parse(localStorage.getItem(SUBMITTED_FAMILIES_KEY) || "[]");
-}
-
-function hasSubmittedFamily(familyId) {
-  return getSubmittedFamilies().includes(normalizeFamilyId(familyId));
-}
-
-function markSubmittedFamily(familyId) {
-  const normalizedFamilyId = normalizeFamilyId(familyId);
-  const families = getSubmittedFamilies();
-  if (!families.includes(normalizedFamilyId)) {
-    families.push(normalizedFamilyId);
-    localStorage.setItem(SUBMITTED_FAMILIES_KEY, JSON.stringify(families));
-  }
 }
 
 function showMessage(text) {
@@ -116,10 +98,6 @@ lookupForm.addEventListener("submit", async (event) => {
     renderRows(rows);
     resultPanel.hidden = false;
 
-    if (hasSubmittedFamily(familyId)) {
-      reportStatus.textContent = DUPLICATE_MESSAGE;
-      reportStatus.className = "report-status warn";
-    }
   } catch (error) {
     resultPanel.hidden = true;
     showMessage("查詢暫時失敗，請稍後再試。");
@@ -137,12 +115,6 @@ reportForm.addEventListener("submit", async (event) => {
   payload.expectedAmount = String(currentExpectedAmount);
   payload.submittedAt = new Date().toISOString();
 
-  if (hasSubmittedFamily(payload.familyId)) {
-    reportStatus.textContent = DUPLICATE_MESSAGE;
-    reportStatus.className = "report-status warn";
-    return;
-  }
-
   if (!/^\d{5}$/.test(payload.lastFive)) {
     reportStatus.textContent = "轉帳後五碼請輸入 5 位數字。";
     reportStatus.className = "report-status warn";
@@ -154,10 +126,14 @@ reportForm.addEventListener("submit", async (event) => {
   reportStatus.className = "report-status";
 
   try {
-    const url = new URL(GOOGLE_APPS_SCRIPT_URL);
-    Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
-    await submitInBackground(url.toString());
-    markSubmittedFamily(payload.familyId);
+    const result = await submitReport(payload);
+
+    if (result.duplicate) {
+      reportStatus.textContent = DUPLICATE_MESSAGE;
+      reportStatus.className = "report-status warn";
+      return;
+    }
+
     reportStatus.textContent = "已送出回報，請至 Google 試算表重新整理確認。";
     reportStatus.className = "report-status ok";
     reportForm.reset();
@@ -171,6 +147,46 @@ reportForm.addEventListener("submit", async (event) => {
     submitButton.disabled = false;
   }
 });
+
+function submitReport(payload) {
+  return new Promise((resolve) => {
+    const callbackName = `activityFeeReport_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const url = new URL(GOOGLE_APPS_SCRIPT_URL);
+    url.searchParams.set("action", "report");
+    url.searchParams.set("callback", callbackName);
+    Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
+
+    const cleanup = () => {
+      delete window[callbackName];
+      script.remove();
+    };
+
+    const fallback = async () => {
+      cleanup();
+      const fallbackUrl = new URL(GOOGLE_APPS_SCRIPT_URL);
+      Object.entries(payload).forEach(([key, value]) => fallbackUrl.searchParams.set(key, value));
+      await submitInBackground(fallbackUrl.toString());
+      resolve({ ok: true, duplicate: false, fallback: true });
+    };
+
+    const timeout = setTimeout(fallback, 6000);
+
+    window[callbackName] = (result) => {
+      clearTimeout(timeout);
+      cleanup();
+      resolve(result || { ok: true, duplicate: false });
+    };
+
+    script.onerror = () => {
+      clearTimeout(timeout);
+      fallback();
+    };
+
+    script.src = url.toString();
+    document.body.appendChild(script);
+  });
+}
 
 async function submitInBackground(url) {
   const separator = url.includes("?") ? "&" : "?";
