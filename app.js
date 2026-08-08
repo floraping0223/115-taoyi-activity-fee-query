@@ -125,7 +125,7 @@ reportForm.addEventListener("submit", async (event) => {
   try {
     const url = new URL(GOOGLE_APPS_SCRIPT_URL);
     Object.entries(payload).forEach(([key, value]) => url.searchParams.set(key, value));
-    await submitWithHiddenFrame(url.toString());
+    await submitWithBeacon(url.toString());
     reportStatus.textContent = "已送出回報至 Google 試算表。";
     reportStatus.className = "report-status ok";
     reportForm.reset();
@@ -140,18 +140,19 @@ reportForm.addEventListener("submit", async (event) => {
   }
 });
 
-function submitWithHiddenFrame(url) {
+function submitWithBeacon(url) {
   return new Promise((resolve) => {
-    const iframe = document.createElement("iframe");
-    iframe.name = `google-sheet-submit-${Date.now()}`;
-    iframe.hidden = true;
-    iframe.src = url;
-    iframe.addEventListener("load", () => {
-      setTimeout(() => iframe.remove(), 1000);
+    const image = new Image();
+    const done = () => {
+      image.onload = null;
+      image.onerror = null;
       resolve();
-    }, { once: true });
-    document.body.appendChild(iframe);
-    setTimeout(resolve, 2500);
+    };
+    const separator = url.includes("?") ? "&" : "?";
+    image.onload = done;
+    image.onerror = done;
+    image.src = `${url}${separator}_=${Date.now()}`;
+    setTimeout(done, 3000);
   });
 }
 
