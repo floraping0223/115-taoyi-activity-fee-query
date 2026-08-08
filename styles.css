@@ -1,0 +1,303 @@
+:root {
+  --ink: #17202a;
+  --muted: #5b6776;
+  --line: #d7dee8;
+  --panel: #ffffff;
+  --wash: #f4f7fb;
+  --accent: #176b87;
+  --accent-dark: #0f536a;
+  --good: #15724f;
+  --warn: #a15c00;
+  --shadow: 0 14px 40px rgba(23, 32, 42, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", Arial, sans-serif;
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(23, 107, 135, 0.12), rgba(94, 139, 126, 0.10)),
+    var(--wash);
+}
+
+.app-shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.query-panel,
+.section-block {
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.query-panel {
+  padding: 28px;
+}
+
+.brand-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+  font-size: 20px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(26px, 4vw, 42px);
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
+.brand-row p {
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.lookup-form label,
+.report-form span {
+  display: block;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 12px;
+}
+
+input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 18px;
+  background: white;
+  color: var(--ink);
+}
+
+input:focus {
+  outline: 3px solid rgba(23, 107, 135, 0.18);
+  border-color: var(--accent);
+}
+
+button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--accent-dark);
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.message {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  color: #6c3f00;
+  background: #fff4df;
+  border: 1px solid #f0c985;
+}
+
+.result-panel {
+  margin-top: 18px;
+}
+
+.summary-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.summary-bar > div {
+  background: #101820;
+  color: white;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.summary-bar .label {
+  display: block;
+  color: #b9c4d0;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.summary-bar strong {
+  font-size: 30px;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.75fr);
+  gap: 18px;
+}
+
+.section-block {
+  padding: 22px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 680px;
+}
+
+th,
+td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+th {
+  background: #edf3f6;
+  color: #314153;
+  font-size: 13px;
+}
+
+td {
+  font-size: 16px;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.empty-cell {
+  color: #9aa5b1;
+}
+
+dl {
+  margin: 0;
+}
+
+dl > div {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+dl > div:first-child {
+  padding-top: 0;
+}
+
+dl > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+dt {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+dd {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.copyable {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.report-block {
+  margin-top: 18px;
+}
+
+.report-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 132px;
+  gap: 14px;
+  align-items: end;
+}
+
+.report-status {
+  min-height: 24px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.report-status.ok {
+  color: var(--good);
+}
+
+.report-status.warn {
+  color: var(--warn);
+}
+
+@media (max-width: 860px) {
+  .content-grid,
+  .summary-bar,
+  .report-form {
+    grid-template-columns: 1fr;
+  }
+
+  .input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .query-panel,
+  .section-block {
+    padding: 18px;
+  }
+}

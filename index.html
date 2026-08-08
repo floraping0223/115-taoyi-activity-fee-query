@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>115桃一活動費繳納查詢</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="query-panel">
+      <div class="brand-row">
+        <div class="mark">115</div>
+        <div>
+          <h1>115桃一活動費繳納查詢</h1>
+          <p>輸入家庭編號後查詢應繳項目與匯款資訊</p>
+        </div>
+      </div>
+
+      <form id="lookupForm" class="lookup-form">
+        <label for="familyId">家庭編號</label>
+        <div class="input-row">
+          <input id="familyId" name="familyId" type="text" inputmode="numeric" autocomplete="off" placeholder="例如：16" required>
+          <button type="submit">查詢</button>
+        </div>
+      </form>
+
+      <div id="message" class="message" hidden></div>
+    </section>
+
+    <section id="resultPanel" class="result-panel" hidden>
+      <div class="summary-bar">
+        <div>
+          <span class="label">家庭編號</span>
+          <strong id="resultFamilyId"></strong>
+        </div>
+        <div>
+          <span class="label">總金額</span>
+          <strong id="totalAmount"></strong>
+        </div>
+      </div>
+
+      <div class="content-grid">
+        <section class="section-block">
+          <h2>查詢資料</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>E 分團別</th>
+                  <th>F 團員自然名</th>
+                  <th>L 大人自然名</th>
+                  <th>P 加保費用</th>
+                  <th>R 自然名</th>
+                  <th>V 加保費用</th>
+                </tr>
+              </thead>
+              <tbody id="resultRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="section-block payment-block">
+          <h2>匯款帳號</h2>
+          <dl>
+            <div>
+              <dt>銀行</dt>
+              <dd>LINE Bank 銀行帳戶 - 824 連線商業銀行</dd>
+            </div>
+            <div>
+              <dt>帳號</dt>
+              <dd class="copyable">111003642280</dd>
+            </div>
+            <div>
+              <dt>戶名</dt>
+              <dd>楊吳孟徽</dd>
+            </div>
+          </dl>
+        </aside>
+      </div>
+
+      <section class="section-block report-block">
+        <h2>匯款訊息回報欄</h2>
+        <form id="reportForm" class="report-form">
+          <label>
+            <span>1. 家庭編號</span>
+            <input id="reportFamilyId" name="familyId" type="text" readonly>
+          </label>
+          <label>
+            <span>2. 匯款日期</span>
+            <input id="transferDate" name="transferDate" type="date" required>
+          </label>
+          <label>
+            <span>3. 匯款金額</span>
+            <input id="transferAmount" name="transferAmount" type="number" min="0" step="1" required>
+          </label>
+          <label>
+            <span>4. 轉帳後五碼</span>
+            <input id="lastFive" name="lastFive" type="text" inputmode="numeric" maxlength="5" pattern="[0-9]{5}" placeholder="請輸入 5 位數字" required>
+          </label>
+          <button type="submit">送出回報</button>
+        </form>
+        <p id="reportStatus" class="report-status" aria-live="polite"></p>
+      </section>
+    </section>
+  </main>
+
+  <script src="app.js?v=20260808-iframe"></script>
+</body>
+</html>
