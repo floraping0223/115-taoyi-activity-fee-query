@@ -112,6 +112,9 @@ reportForm.addEventListener("submit", async (event) => {
   const submitButton = reportForm.querySelector("button");
   const payload = Object.fromEntries(new FormData(reportForm).entries());
   payload.familyId = normalizeFamilyId(payload.familyId);
+  payload.lastFive = document.querySelector("#lastFive").value.trim();
+  payload.transferLastFive = payload.lastFive;
+  payload.last5 = payload.lastFive;
   payload.expectedAmount = String(currentExpectedAmount);
   payload.submittedAt = new Date().toISOString();
 
