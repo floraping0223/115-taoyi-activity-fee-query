@@ -1,6 +1,7 @@
 const STORAGE_KEY = "taoyi-115-attendance-ui-v1";
 const SCRIPT_URL_KEY = "taoyi-115-apps-script-url";
 const APP_MODE = document.body.dataset.appMode || "admin";
+const DEFAULT_SCRIPT_URL = window.TAOYI_BACKEND_URL || "";
 
 const SQUADS = {
   "小蟻": ["小黑蟻", "小黃蟻", "小綠蟻", "小紅蟻", "小蟻團團隊"],
@@ -105,7 +106,7 @@ function setup() {
   )).join("");
 
   eventSelect.value = state.currentEventId;
-  scriptUrl.value = localStorage.getItem(SCRIPT_URL_KEY) || "";
+  scriptUrl.value = localStorage.getItem(SCRIPT_URL_KEY) || DEFAULT_SCRIPT_URL;
   syncEventFields();
 
   eventSelect.addEventListener("change", () => {
