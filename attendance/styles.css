@@ -371,6 +371,23 @@ label span {
   gap: 8px;
 }
 
+.family-mode .event-panel,
+.family-mode .tabbar,
+.family-mode #overviewView,
+.family-mode #expectedView,
+.family-mode #checkinView,
+.family-mode #annualView {
+  display: none !important;
+}
+
+.family-mode #familyView {
+  display: block;
+}
+
+.family-mode .app-header {
+  margin-bottom: 16px;
+}
+
 .mini-stat {
   display: grid;
   grid-template-columns: 1fr repeat(4, 58px);

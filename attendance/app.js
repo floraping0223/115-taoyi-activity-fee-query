@@ -1,5 +1,6 @@
 const STORAGE_KEY = "taoyi-115-attendance-ui-v1";
 const SCRIPT_URL_KEY = "taoyi-115-apps-script-url";
+const APP_MODE = document.body.dataset.appMode || "admin";
 
 const SQUADS = {
   "小蟻": ["小黑蟻", "小黃蟻", "小綠蟻", "小紅蟻", "小蟻團團隊"],
@@ -43,7 +44,7 @@ const DEFAULT_RULES = {
 };
 
 const state = loadState();
-let activeView = "overview";
+let activeView = APP_MODE === "family" ? "family" : "overview";
 let activeEntrance = "小蟻";
 let activeSquad = "全部";
 
@@ -91,6 +92,14 @@ setup();
 render();
 
 function setup() {
+  document.body.classList.toggle("family-mode", APP_MODE === "family");
+  document.querySelectorAll(".tab-button").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.view === activeView);
+  });
+  document.querySelectorAll(".view").forEach((view) => {
+    view.classList.toggle("is-active", view.id === `${activeView}View`);
+  });
+
   eventSelect.innerHTML = state.events.map((event) => (
     `<option value="${event.id}">${event.id}｜${event.name}</option>`
   )).join("");
