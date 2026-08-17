@@ -3,192 +3,109 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>115桃一點名表</title>
+  <title>115桃一活動費繳納查詢</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <main class="app-shell">
-    <header class="app-header">
-      <div>
-        <p class="eyebrow">桃一親子團</p>
-        <h1>115桃一點名表</h1>
-      </div>
-      <div class="event-badge" id="openState">第 1 場</div>
-    </header>
-
-    <section class="event-panel" aria-label="活動設定">
-      <label>
-        <span>活動場次</span>
-        <select id="eventSelect"></select>
-      </label>
-      <label>
-        <span>活動日期</span>
-        <input id="eventDate" type="date">
-      </label>
-      <label>
-        <span>活動名稱</span>
-        <input id="eventName" type="text">
-      </label>
-      <label class="switch-row">
-        <input id="eagleSplit" type="checkbox">
-        <span>本場啟用育成鷹團分流</span>
-      </label>
-      <label class="switch-row">
-        <input id="preOpen" type="checkbox">
-        <span>開放家庭會前確認</span>
-      </label>
-      <label class="switch-row">
-        <input id="onsiteOpen" type="checkbox">
-        <span>開放現場點名</span>
-      </label>
-      <label>
-        <span>Apps Script URL</span>
-        <input id="scriptUrl" type="url" placeholder="部署後貼上 Web App URL">
-      </label>
-      <button id="syncGoogle" type="button">同步 Google</button>
-      <button id="clearLocalTestData" type="button" class="danger-outline">清除本機測試資料</button>
-    </section>
-
-    <nav class="tabbar" aria-label="主要頁面">
-      <button class="tab-button is-active" type="button" data-view="overview">總覽</button>
-      <button class="tab-button" type="button" data-view="family">家庭確認</button>
-      <button class="tab-button" type="button" data-view="expected">預計名單</button>
-      <button class="tab-button" type="button" data-view="checkin">現場點名</button>
-      <button class="tab-button" type="button" data-view="annual">全年總表</button>
-    </nav>
-
-    <section id="overviewView" class="view is-active" aria-label="當日管理總覽">
-      <div class="metric-grid" id="metricGrid"></div>
-      <section class="alert-panel">
+    <section class="query-panel">
+      <div class="brand-row">
+        <div class="mark">115</div>
         <div>
-          <h2>無家庭成人陪同的實到兒童</h2>
-          <p>以家庭編號與上午/下午時段交叉核對，不要求成人與孩子同場地。</p>
+          <h1>115桃一活動費繳納查詢</h1>
+          <p>輸入家庭編號後查詢應繳項目與匯款資訊</p>
         </div>
-        <div id="familyAlerts" class="alert-list"></div>
-      </section>
-      <section class="section-grid" id="overviewGroups"></section>
-    </section>
-
-    <section id="familyView" class="view" aria-label="家庭會前確認">
-      <div class="family-lookup">
-        <label>
-          <span>輸入家庭編號</span>
-          <input id="familySearch" type="search" inputmode="numeric" placeholder="例如 16">
-        </label>
-        <button id="loadFamily" type="button">載入家庭</button>
       </div>
-      <div id="familyCards" class="person-list"></div>
-      <div id="familyConfirmPanel" class="confirm-panel"></div>
+
+      <form id="lookupForm" class="lookup-form">
+        <label for="familyId">家庭編號</label>
+        <div class="input-row">
+          <input id="familyId" name="familyId" type="text" inputmode="numeric" autocomplete="off" placeholder="例如：16" required>
+          <button type="submit">查詢</button>
+        </div>
+      </form>
+
+      <div id="message" class="message" hidden></div>
     </section>
 
-    <section id="expectedView" class="view" aria-label="會前預計出席名單">
-      <div class="expected-header">
+    <section id="resultPanel" class="result-panel" hidden>
+      <div class="summary-bar">
         <div>
-          <p class="eyebrow">會前自動產生</p>
-          <h2>本場預計出席名單</h2>
+          <span class="label">家庭編號</span>
+          <strong id="resultFamilyId"></strong>
         </div>
-        <p>依家庭確認結果分流。育成會與老鷹單飛入口可在這裡安排家長支援團隊與職務；若選小蟻團、炫蜂團、奔鹿團，會進入該團團隊現場點名。</p>
+        <div>
+          <span class="label">總金額</span>
+          <strong id="totalAmount"></strong>
+        </div>
       </div>
-      <div id="expectedLists" class="expected-lists"></div>
-    </section>
 
-    <section id="checkinView" class="view" aria-label="現場點名">
-      <div class="entrance-grid" id="entranceGrid"></div>
-      <section class="checkin-board">
-        <div class="board-toolbar">
-          <div>
-            <p class="eyebrow">固定入口</p>
-            <h2 id="boardTitle">小蟻點名</h2>
+      <div class="content-grid">
+        <section class="section-block">
+          <h2>查詢資料</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>E 分團別</th>
+                  <th>F 團員自然名</th>
+                  <th>L 大人自然名</th>
+                  <th>P 加保費用</th>
+                  <th>R 自然名</th>
+                  <th>V 加保費用</th>
+                </tr>
+              </thead>
+              <tbody id="resultRows"></tbody>
+            </table>
           </div>
+        </section>
+
+        <aside class="section-block payment-block">
+          <h2>匯款帳號</h2>
+          <dl>
+            <div>
+              <dt>銀行</dt>
+              <dd>LINE Bank 銀行帳戶 - 824 連線商業銀行</dd>
+            </div>
+            <div>
+              <dt>帳號</dt>
+              <dd class="copyable">111003642280</dd>
+            </div>
+            <div>
+              <dt>戶名</dt>
+              <dd>楊吳孟徽</dd>
+            </div>
+          </dl>
+        </aside>
+      </div>
+
+      <section class="section-block report-block">
+        <h2>匯款訊息回報欄</h2>
+        <form id="reportForm" class="report-form">
           <label>
-            <span>搜尋</span>
-            <input id="memberSearch" type="search" placeholder="姓名、家庭、小隊">
+            <span>1. 家庭編號</span>
+            <input id="reportFamilyId" name="familyId" type="text" readonly>
           </label>
-        </div>
-        <div class="squad-tabs" id="squadTabs"></div>
-        <div id="checkinRecorderPanel" class="confirm-panel"></div>
-        <div id="checkinList" class="person-list"></div>
-        <form id="guestForm" class="guest-form">
-          <h3>臨時出席</h3>
-          <div class="guest-toggle" role="group" aria-label="臨時出席">
-            <label><input type="radio" name="guestMode" value="none" checked><span>無</span></label>
-            <label><input type="radio" name="guestMode" value="has"><span>有</span></label>
-          </div>
-          <div class="guest-fields" hidden>
-            <input name="familyId" placeholder="家庭編號">
-            <input name="name" placeholder="自然名">
-            <button type="submit">加入本場點名</button>
-          </div>
+          <label>
+            <span>2. 匯款日期</span>
+            <input id="transferDate" name="transferDate" type="date" required>
+          </label>
+          <label>
+            <span>3. 匯款金額</span>
+            <input id="transferAmount" name="transferAmount" type="number" min="0" step="1" required>
+          </label>
+          <label>
+            <span>4. 轉帳後五碼</span>
+            <input id="lastFive" name="lastFive" type="text" inputmode="numeric" maxlength="5" pattern="[0-9]{5}" placeholder="請輸入 5 位數字" required>
+          </label>
+          <button type="submit">送出回報</button>
         </form>
-        <div id="checkinSubmitPanel" class="confirm-panel"></div>
+        <p id="reportStatus" class="report-status" aria-live="polite"></p>
       </section>
-    </section>
-
-    <section id="annualView" class="view" aria-label="全年12次出勤總表">
-      <section class="rules-panel" aria-label="出勤規則設定">
-        <div>
-          <p class="eyebrow">出勤規則設定</p>
-          <h2>孩子缺席權重</h2>
-        </div>
-        <div class="rules-grid">
-          <label>
-            <span>正常全天</span>
-            <input id="rulePresent" type="number" min="0" max="1" step="0.5">
-          </label>
-          <label>
-            <span>遲到</span>
-            <input id="ruleLate" type="number" min="0" max="1" step="0.5">
-          </label>
-          <label>
-            <span>上午請假</span>
-            <input id="ruleMorning" type="number" min="0" max="1" step="0.5">
-          </label>
-          <label>
-            <span>下午請假</span>
-            <input id="ruleAfternoon" type="number" min="0" max="1" step="0.5">
-          </label>
-          <label>
-            <span>全天缺席/請假</span>
-            <input id="ruleAbsent" type="number" min="0" max="1" step="0.5">
-          </label>
-        </div>
-      </section>
-      <div class="annual-toolbar">
-        <label>
-          <span>篩選團別/小隊/姓名/家庭</span>
-          <input id="annualSearch" type="search" placeholder="輸入關鍵字">
-        </label>
-      </div>
-      <div id="annualList" class="annual-list"></div>
     </section>
   </main>
 
-  <template id="personCardTemplate">
-    <article class="person-card">
-      <div class="person-main">
-        <div>
-          <p class="person-meta"></p>
-          <h3 class="person-name"></h3>
-        </div>
-        <strong class="person-status"></strong>
-      </div>
-      <div class="button-row status-actions"></div>
-      <div class="adult-row">
-        <label class="check-tile">
-          <input class="am-check" type="checkbox">
-          <span>上午實到</span>
-        </label>
-        <label class="check-tile">
-          <input class="pm-check" type="checkbox">
-          <span>下午13:00實到</span>
-        </label>
-      </div>
-      <div class="split-row"></div>
-      <input class="note-field" type="text" placeholder="備註/請假事由">
-    </article>
-  </template>
-
-  <script src="data.js"></script>
-  <script src="app.js"></script>
+  <script src="encrypted-data.js?v=20260808-family75"></script>
+  <script src="app.js?v=20260809-lastfive"></script>
 </body>
 </html>
