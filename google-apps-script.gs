@@ -247,9 +247,13 @@ function appendUniqueRows_(name, rows, keyGetter) {
   const width = HEADERS[name].length;
   const existing = new Set();
   const lastRow = sheet.getLastRow();
+  const keptRows = [];
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, width).getValues().forEach(row => {
-      existing.add(keyGetter(row));
+      const key = keyGetter(row);
+      if (!key || existing.has(key)) return;
+      existing.add(key);
+      keptRows.push(row);
     });
   }
   const fresh = (rows || []).filter(row => {
@@ -258,9 +262,9 @@ function appendUniqueRows_(name, rows, keyGetter) {
     existing.add(key);
     return true;
   });
-  if (fresh.length) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, fresh.length, width).setValues(fresh);
-  }
+  const values = [HEADERS[name]].concat(keptRows, fresh);
+  sheet.clear();
+  sheet.getRange(1, 1, values.length, width).setValues(values);
   formatSheet_(sheet);
 }
 
