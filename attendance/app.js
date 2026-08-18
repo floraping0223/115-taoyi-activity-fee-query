@@ -102,13 +102,11 @@ function setup() {
     view.classList.toggle("is-active", view.id === `${activeView}View`);
   });
 
-  eventSelect.innerHTML = state.events.map((event) => (
-    `<option value="${event.id}">${event.id}｜${event.name}</option>`
-  )).join("");
-
+  syncEventOptions();
   eventSelect.value = state.currentEventId;
   scriptUrl.value = DEFAULT_SCRIPT_URL || localStorage.getItem(SCRIPT_URL_KEY) || "";
   syncEventFields();
+  loadEventSettingsFromGoogle();
 
   eventSelect.addEventListener("change", () => {
     state.currentEventId = eventSelect.value;
@@ -225,6 +223,70 @@ function setup() {
     render();
   });
   syncGuestFields();
+}
+
+function syncEventOptions() {
+  eventSelect.innerHTML = state.events.map((event) => (
+    `<option value="${event.id}">${event.id}｜${event.name}</option>`
+  )).join("");
+}
+
+function loadEventSettingsFromGoogle() {
+  const url = normalize(DEFAULT_SCRIPT_URL || scriptUrl.value);
+  if (!url) return;
+  const callbackName = `taoyiEvents${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const script = document.createElement("script");
+  const cleanup = () => {
+    delete window[callbackName];
+    script.remove();
+  };
+  const timer = setTimeout(cleanup, 8000);
+  window[callbackName] = (payload) => {
+    clearTimeout(timer);
+    if (mergeEventSettings(payload)) {
+      syncEventOptions();
+      eventSelect.value = state.currentEventId;
+      syncEventFields();
+      saveState();
+      render();
+    }
+    cleanup();
+  };
+  try {
+    const endpoint = new URL(url);
+    endpoint.searchParams.set("action", "events");
+    endpoint.searchParams.set("callback", callbackName);
+    script.src = endpoint.toString();
+    script.onerror = () => {
+      clearTimeout(timer);
+      cleanup();
+    };
+    document.body.appendChild(script);
+  } catch (error) {
+    clearTimeout(timer);
+    cleanup();
+  }
+}
+
+function mergeEventSettings(payload) {
+  if (!payload || !Array.isArray(payload.events)) return false;
+  let changed = false;
+  const existingEvents = new Map(state.events.map((event) => [event.id, event]));
+  payload.events.forEach((incoming) => {
+    const event = existingEvents.get(normalize(incoming.id));
+    if (!event) return;
+    ["date", "name", "preOpen", "onsiteOpen", "eagleSplit"].forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(incoming, key) && event[key] !== incoming[key]) {
+        event[key] = incoming[key];
+        changed = true;
+      }
+    });
+  });
+  if (payload.currentEventId && state.currentEventId !== payload.currentEventId) {
+    state.currentEventId = payload.currentEventId;
+    changed = true;
+  }
+  return changed;
 }
 
 async function syncToGoogle(options = {}) {

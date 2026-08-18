@@ -28,7 +28,13 @@ const HEADERS = {
 
 function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
+  const callback = e && e.parameter && e.parameter.callback;
   setupWorkbook_();
+  if (action === "events") {
+    const payload = readEventSettings_();
+    if (callback) return javascript_(callback, payload);
+    return json_(payload);
+  }
   if (action === "setup") {
     return text_("115桃一親子團全年出勤管理系統分頁已建立：" + SpreadsheetApp.getActiveSpreadsheet().getUrl());
   }
@@ -55,6 +61,8 @@ function setupWorkbook_() {
 }
 
 function writeSnapshot_(payload) {
+  PropertiesService.getDocumentProperties().setProperty("currentEventId", payload.currentEventId || "01");
+
   writeSheet_(SHEETS.members, (payload.members || []).map(member => [
     member.id, member.familyId, member.name, member.role, member.group, member.squad,
     member.sourceGroup || "", member.eagleQualified ? "是" : "否", "是", "",
@@ -135,6 +143,34 @@ function writeSnapshot_(payload) {
     ["所屬分團", "所屬分團", "直接匯入", "包含鷹則可選老鷹單飛活動"],
     ["所屬小隊", "小隊", "直接匯入", ""],
   ]);
+}
+
+function readEventSettings_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.events);
+  const rows = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.events].length).getValues()
+    : [];
+  const events = rows.map(row => ({
+    id: String(row[0] || "").padStart(2, "0"),
+    date: formatDateValue_(row[1]),
+    name: row[2] || "",
+    preOpen: row[3] === "是" || row[3] === true,
+    onsiteOpen: row[4] === "是" || row[4] === true,
+    eagleSplit: row[5] === "是" || row[5] === true,
+  })).filter(event => event.id);
+  return {
+    ok: true,
+    currentEventId: PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01",
+    events: events,
+  };
+}
+
+function formatDateValue_(value) {
+  if (!value) return "";
+  if (Object.prototype.toString.call(value) === "[object Date]") {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return String(value);
 }
 
 function writeSheet_(name, rows) {
@@ -248,4 +284,11 @@ function text_(content) {
 
 function json_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function javascript_(callback, payload) {
+  const safeCallback = /^[\w$.]+$/.test(callback) ? callback : "callback";
+  return ContentService
+    .createTextOutput(safeCallback + "(" + JSON.stringify(payload) + ");")
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
