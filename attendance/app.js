@@ -106,7 +106,7 @@ function setup() {
   )).join("");
 
   eventSelect.value = state.currentEventId;
-  scriptUrl.value = localStorage.getItem(SCRIPT_URL_KEY) || DEFAULT_SCRIPT_URL;
+  scriptUrl.value = DEFAULT_SCRIPT_URL || localStorage.getItem(SCRIPT_URL_KEY) || "";
   syncEventFields();
 
   eventSelect.addEventListener("change", () => {
