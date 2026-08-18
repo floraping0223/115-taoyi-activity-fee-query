@@ -67,6 +67,7 @@ const loadFamily = document.querySelector("#loadFamily");
 const familyCards = document.querySelector("#familyCards");
 const familyConfirmPanel = document.querySelector("#familyConfirmPanel");
 const familyEventSummary = document.querySelector("#familyEventSummary");
+const preReplyLists = document.querySelector("#preReplyLists");
 const expectedLists = document.querySelector("#expectedLists");
 const entranceGrid = document.querySelector("#entranceGrid");
 const boardTitle = document.querySelector("#boardTitle");
@@ -564,8 +565,68 @@ function renderOverviewGroups() {
 }
 
 function renderExpectedLists() {
+  renderPreReplyLists();
   const groups = currentEvent().eagleSplit ? ENTRANCES : ENTRANCES.filter((entry) => entry.key !== "育成鷹團");
   expectedLists.replaceChildren(...groups.map((entry) => renderExpectedCard(entry)));
+}
+
+function renderPreReplyLists() {
+  if (!preReplyLists) return;
+  const families = Object.keys(state.familyConfirmations || {})
+    .map((key) => {
+      const [eventId, type, familyId] = key.split("|");
+      return { eventId, type, familyId, confirmation: state.familyConfirmations[key] };
+    })
+    .filter((item) => item.eventId === currentEvent().id && item.type === "family")
+    .sort((a, b) => String(a.familyId).localeCompare(String(b.familyId), "zh-Hant", { numeric: true }));
+
+  if (!families.length) {
+    preReplyLists.innerHTML = `
+      <section class="pre-reply-card">
+        <div class="pre-reply-title"><strong>會前回覆總覽</strong><span>目前尚未讀到本場家庭回覆。</span></div>
+      </section>
+    `;
+    return;
+  }
+
+  const rows = families.map((family) => {
+    const members = state.members
+      .filter((member) => member.familyId === family.familyId)
+      .sort(familyConfirmSort);
+    const memberRows = members.map((member) => {
+      const record = getRecord(member.id);
+      return `
+        <div class="pre-reply-row">
+          <span>家庭 ${escapeHtml(member.familyId)}</span>
+          <strong>${escapeHtml(member.name)}</strong>
+          <span>${escapeHtml(displayRole(member))}</span>
+          <span>${escapeHtml(record.expected || "未確認")}</span>
+          <span>${escapeHtml(record.route || "--")}</span>
+          <span>${escapeHtml(record.note || "--")}</span>
+        </div>
+      `;
+    }).join("");
+    return `
+      <article class="pre-reply-card">
+        <div class="pre-reply-title">
+          <strong>家庭 ${escapeHtml(family.familyId)}</strong>
+          <span>${formatTime(family.confirmation.submittedAt)}｜${syncStatusText(family.confirmation)}</span>
+        </div>
+        <div class="pre-reply-row header">
+          <span>家庭</span><span>自然名</span><span>屬性</span><span>會前狀態</span><span>活動去向</span><span>備註</span>
+        </div>
+        ${memberRows}
+      </article>
+    `;
+  }).join("");
+
+  preReplyLists.innerHTML = `
+    <section class="pre-reply-summary">
+      <strong>會前回覆總覽</strong>
+      <span>${families.length} 個家庭已回覆，含出席、請假與活動去向。</span>
+    </section>
+    ${rows}
+  `;
 }
 
 function renderExpectedCard(entry) {

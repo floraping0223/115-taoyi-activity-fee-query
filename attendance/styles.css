@@ -323,6 +323,60 @@ label span {
   overflow: hidden;
 }
 
+.pre-reply-lists {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.pre-reply-summary,
+.pre-reply-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.pre-reply-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.pre-reply-summary span,
+.pre-reply-title span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pre-reply-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 14px;
+  color: var(--ink);
+  background: var(--soft-teal);
+}
+
+.pre-reply-row {
+  display: grid;
+  grid-template-columns: 78px minmax(90px, 1fr) 64px 90px minmax(100px, 1fr) minmax(100px, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.pre-reply-row.header {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  background: #f3f6fa;
+}
+
 .expected-title {
   display: flex;
   justify-content: space-between;
@@ -870,6 +924,16 @@ label span {
 
   .confirm-status {
     flex-direction: column;
+  }
+
+  .pre-reply-summary,
+  .pre-reply-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pre-reply-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .tabbar {
