@@ -244,7 +244,7 @@ function loadBackendSnapshotFromGoogle() {
     const timer = setTimeout(() => {
       cleanup();
       resolve(false);
-    }, 8000);
+    }, 30000);
     window[callbackName] = (payload) => {
       clearTimeout(timer);
       const changed = mergeBackendSnapshot(payload);
@@ -256,7 +256,7 @@ function loadBackendSnapshotFromGoogle() {
         render();
       }
       cleanup();
-      resolve(changed);
+      resolve(Boolean(payload?.ok));
     };
     try {
       const endpoint = new URL(url);

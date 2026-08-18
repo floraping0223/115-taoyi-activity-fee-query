@@ -29,12 +29,12 @@ const HEADERS = {
 function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
   const callback = e && e.parameter && e.parameter.callback;
-  setupWorkbook_();
   if (action === "events" || action === "snapshot") {
     const payload = readBackendSnapshot_();
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
+  setupWorkbook_();
   if (action === "setup") {
     return text_("115桃一親子團全年出勤管理系統分頁已建立：" + SpreadsheetApp.getActiveSpreadsheet().getUrl());
   }
@@ -159,6 +159,7 @@ function readBackendSnapshot_() {
 
 function readEventSettings_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.events);
+  if (!sheet) return [];
   const rows = sheet.getLastRow() > 1
     ? sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.events].length).getValues()
     : [];
@@ -174,6 +175,7 @@ function readEventSettings_() {
 
 function readFamilyReplies_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.pre);
+  if (!sheet) return [];
   if (sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.pre].length).getValues()
     .map(row => ({
@@ -193,6 +195,7 @@ function readFamilyReplies_() {
 
 function readCheckinReplies_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.onsite);
+  if (!sheet) return [];
   if (sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.onsite].length).getValues()
     .map(row => ({
