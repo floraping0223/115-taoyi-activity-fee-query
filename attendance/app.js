@@ -579,12 +579,16 @@ function renderPreReplyLists() {
     })
     .filter((item) => item.eventId === currentEvent().id && item.type === "family")
     .sort((a, b) => String(a.familyId).localeCompare(String(b.familyId), "zh-Hant", { numeric: true }));
+  const repliedFamilyIds = new Set(families.map((family) => family.familyId));
+  const pendingFamilies = expectedFamilyConfirmFamilies()
+    .filter((family) => !repliedFamilyIds.has(family.familyId));
 
   if (!families.length) {
     preReplyLists.innerHTML = `
       <section class="pre-reply-card">
         <div class="pre-reply-title"><strong>會前回覆總覽</strong><span>目前尚未讀到本場家庭回覆。</span></div>
       </section>
+      ${renderPendingFamilyReplies(pendingFamilies)}
     `;
     return;
   }
@@ -623,10 +627,46 @@ function renderPreReplyLists() {
   preReplyLists.innerHTML = `
     <section class="pre-reply-summary">
       <strong>會前回覆總覽</strong>
-      <span>${families.length} 個家庭已回覆，含出席、請假與活動去向。</span>
+      <span>${families.length} 個家庭已回覆，${pendingFamilies.length} 個家庭尚未回覆。</span>
+    </section>
+    ${rows}
+    ${renderPendingFamilyReplies(pendingFamilies)}
+  `;
+}
+
+function renderPendingFamilyReplies(families) {
+  if (!families.length) return "";
+  const rows = families.map((family) => `
+    <article class="pre-reply-card pending">
+      <div class="pre-reply-title">
+        <strong>家庭 ${escapeHtml(family.familyId)}</strong>
+        <span>尚未收到會前確認</span>
+      </div>
+      <div class="pending-family-members">${escapeHtml(family.members.map((member) => member.name).join("、"))}</div>
+    </article>
+  `).join("");
+  return `
+    <section class="pre-reply-summary pending">
+      <strong>尚未回覆家庭</strong>
+      <span>以下家庭目前沒有在後端會前回覆紀錄中。</span>
     </section>
     ${rows}
   `;
+}
+
+function expectedFamilyConfirmFamilies() {
+  return Object.entries(groupBy(state.members, (member) => member.familyId))
+    .filter(([familyId, members]) => normalize(familyId) && members.some(shouldIncludeInFamilyConfirm))
+    .map(([familyId, members]) => ({
+      familyId,
+      members: members.filter(shouldIncludeInFamilyConfirm).sort(familyConfirmSort),
+    }))
+    .sort((a, b) => String(a.familyId).localeCompare(String(b.familyId), "zh-Hant", { numeric: true }));
+}
+
+function shouldIncludeInFamilyConfirm(member) {
+  const sourceSquad = normalize(member.sourceSquad || member.squad);
+  return Boolean(member.familyId && member.name && sourceSquad && sourceSquad !== "/");
 }
 
 function renderExpectedCard(entry) {

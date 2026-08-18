@@ -344,6 +344,19 @@ label span {
   padding: 12px 14px;
 }
 
+.pre-reply-summary.pending,
+.pre-reply-card.pending {
+  border-color: #e4b35f;
+  background: #fff8ea;
+}
+
+.pending-family-members {
+  padding: 11px 14px;
+  color: var(--ink);
+  font-weight: 850;
+  line-height: 1.55;
+}
+
 .pre-reply-summary span,
 .pre-reply-title span {
   color: var(--muted);
