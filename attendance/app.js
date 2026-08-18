@@ -106,7 +106,7 @@ function setup() {
   eventSelect.value = state.currentEventId;
   scriptUrl.value = DEFAULT_SCRIPT_URL || localStorage.getItem(SCRIPT_URL_KEY) || "";
   syncEventFields();
-  loadEventSettingsFromGoogle();
+  loadBackendSnapshotFromGoogle();
 
   eventSelect.addEventListener("change", () => {
     state.currentEventId = eventSelect.value;
@@ -231,62 +231,124 @@ function syncEventOptions() {
   )).join("");
 }
 
-function loadEventSettingsFromGoogle() {
+function loadBackendSnapshotFromGoogle() {
   const url = normalize(DEFAULT_SCRIPT_URL || scriptUrl.value);
-  if (!url) return;
-  const callbackName = `taoyiEvents${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  if (!url) return Promise.resolve(false);
+  const callbackName = `taoyiSnapshot${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const script = document.createElement("script");
-  const cleanup = () => {
-    delete window[callbackName];
-    script.remove();
-  };
-  const timer = setTimeout(cleanup, 8000);
-  window[callbackName] = (payload) => {
-    clearTimeout(timer);
-    if (mergeEventSettings(payload)) {
-      syncEventOptions();
-      eventSelect.value = state.currentEventId;
-      syncEventFields();
-      saveState();
-      render();
-    }
-    cleanup();
-  };
-  try {
-    const endpoint = new URL(url);
-    endpoint.searchParams.set("action", "events");
-    endpoint.searchParams.set("callback", callbackName);
-    script.src = endpoint.toString();
-    script.onerror = () => {
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      delete window[callbackName];
+      script.remove();
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, 8000);
+    window[callbackName] = (payload) => {
+      clearTimeout(timer);
+      const changed = mergeBackendSnapshot(payload);
+      if (changed) {
+        syncEventOptions();
+        eventSelect.value = state.currentEventId;
+        syncEventFields();
+        saveState();
+        render();
+      }
+      cleanup();
+      resolve(changed);
+    };
+    try {
+      const endpoint = new URL(url);
+      endpoint.searchParams.set("action", "snapshot");
+      endpoint.searchParams.set("callback", callbackName);
+      script.src = endpoint.toString();
+      script.onerror = () => {
+        clearTimeout(timer);
+        cleanup();
+        resolve(false);
+      };
+      document.body.appendChild(script);
+    } catch (error) {
       clearTimeout(timer);
       cleanup();
-    };
-    document.body.appendChild(script);
-  } catch (error) {
-    clearTimeout(timer);
-    cleanup();
-  }
+      resolve(false);
+    }
+  });
 }
 
-function mergeEventSettings(payload) {
-  if (!payload || !Array.isArray(payload.events)) return false;
+function mergeBackendSnapshot(payload) {
+  if (!payload) return false;
   let changed = false;
-  const existingEvents = new Map(state.events.map((event) => [event.id, event]));
-  payload.events.forEach((incoming) => {
-    const event = existingEvents.get(normalize(incoming.id));
-    if (!event) return;
-    ["date", "name", "preOpen", "onsiteOpen", "eagleSplit"].forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(incoming, key) && event[key] !== incoming[key]) {
-        event[key] = incoming[key];
-        changed = true;
-      }
+
+  if (Array.isArray(payload.events)) {
+    const existingEvents = new Map(state.events.map((event) => [event.id, event]));
+    payload.events.forEach((incoming) => {
+      const event = existingEvents.get(normalize(incoming.id));
+      if (!event) return;
+      ["date", "name", "preOpen", "onsiteOpen", "eagleSplit"].forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(incoming, key) && event[key] !== incoming[key]) {
+          event[key] = incoming[key];
+          changed = true;
+        }
+      });
     });
-  });
+  }
+
   if (payload.currentEventId && state.currentEventId !== payload.currentEventId) {
     state.currentEventId = payload.currentEventId;
     changed = true;
   }
+
+  (payload.familyReplies || []).forEach((reply) => {
+    const member = state.members.find((item) => item.id === reply.memberId);
+    if (!member) return;
+    const record = getRecord(reply.memberId, reply.eventId);
+    if (mergeRecordField(record, "expected", reply.expected || "未確認")) changed = true;
+    if (mergeRecordField(record, "route", reply.route || "")) changed = true;
+    if (mergeRecordField(record, "note", reply.note || "")) changed = true;
+    const key = familyConfirmKeyFor(reply.eventId, reply.familyId || member.familyId);
+    const confirmation = state.familyConfirmations[key] || {};
+    const nextConfirmation = {
+      submittedAt: reply.submittedAt || confirmation.submittedAt || "",
+      syncStatus: "sent",
+      syncedAt: reply.syncedAt || confirmation.syncedAt || reply.submittedAt || "",
+    };
+    if (JSON.stringify(confirmation) !== JSON.stringify(nextConfirmation)) {
+      state.familyConfirmations[key] = nextConfirmation;
+      changed = true;
+    }
+  });
+
+  (payload.checkinReplies || []).forEach((reply) => {
+    const member = state.members.find((item) => item.id === reply.memberId);
+    if (!member) return;
+    const record = getRecord(reply.memberId, reply.eventId);
+    if (mergeRecordField(record, "status", reply.status || "未確認")) changed = true;
+    if (mergeRecordField(record, "am", Boolean(reply.am))) changed = true;
+    if (mergeRecordField(record, "pm", Boolean(reply.pm))) changed = true;
+    if (mergeRecordField(record, "note", reply.note || record.note || "")) changed = true;
+    const key = checkinSubmissionKeyFor(reply.eventId, reply.group, reply.squad);
+    const submission = state.checkinSubmissions[key] || {};
+    const nextSubmission = {
+      recorder: reply.recorder || submission.recorder || "",
+      submittedAt: reply.submittedAt || submission.submittedAt || "",
+      syncStatus: "sent",
+      syncedAt: reply.syncedAt || submission.syncedAt || reply.submittedAt || "",
+    };
+    if (JSON.stringify(submission) !== JSON.stringify(nextSubmission)) {
+      state.checkinSubmissions[key] = nextSubmission;
+      changed = true;
+    }
+  });
+
   return changed;
+}
+
+function mergeRecordField(record, key, value) {
+  if (record[key] === value) return false;
+  record[key] = value;
+  return true;
 }
 
 async function syncToGoogle(options = {}) {
@@ -308,7 +370,8 @@ async function syncToGoogle(options = {}) {
       body: JSON.stringify(buildSyncPayload()),
     });
     markSubmissionsSynced();
-    if (!silent) syncGoogle.textContent = "已送出";
+    await loadBackendSnapshotFromGoogle();
+    if (!silent) syncGoogle.textContent = "已同步";
     return true;
   } catch (error) {
     if (!silent) syncGoogle.textContent = "同步失敗";
@@ -1135,7 +1198,11 @@ function getRecord(memberId, eventId = currentEvent().id) {
 }
 
 function familyConfirmKey(familyId) {
-  return `${currentEvent().id}|family|${familyId}`;
+  return familyConfirmKeyFor(currentEvent().id, familyId);
+}
+
+function familyConfirmKeyFor(eventId, familyId) {
+  return `${eventId}|family|${familyId}`;
 }
 
 function familyConfirmation(familyId) {
@@ -1143,7 +1210,11 @@ function familyConfirmation(familyId) {
 }
 
 function checkinSubmissionKey() {
-  return `${currentEvent().id}|checkin|${activeEntrance}|${activeSquad}`;
+  return checkinSubmissionKeyFor(currentEvent().id, activeEntrance, activeSquad);
+}
+
+function checkinSubmissionKeyFor(eventId, group, squad) {
+  return `${eventId}|checkin|${group}|${squad}`;
 }
 
 function checkinSubmission() {

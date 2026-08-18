@@ -30,8 +30,8 @@ function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
   const callback = e && e.parameter && e.parameter.callback;
   setupWorkbook_();
-  if (action === "events") {
-    const payload = readEventSettings_();
+  if (action === "events" || action === "snapshot") {
+    const payload = readBackendSnapshot_();
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
@@ -145,12 +145,22 @@ function writeSnapshot_(payload) {
   ]);
 }
 
+function readBackendSnapshot_() {
+  return {
+    ok: true,
+    currentEventId: PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01",
+    events: readEventSettings_(),
+    familyReplies: readFamilyReplies_(),
+    checkinReplies: readCheckinReplies_(),
+  };
+}
+
 function readEventSettings_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.events);
   const rows = sheet.getLastRow() > 1
     ? sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.events].length).getValues()
     : [];
-  const events = rows.map(row => ({
+  return rows.map(row => ({
     id: String(row[0] || "").padStart(2, "0"),
     date: formatDateValue_(row[1]),
     name: row[2] || "",
@@ -158,17 +168,62 @@ function readEventSettings_() {
     onsiteOpen: row[4] === "是" || row[4] === true,
     eagleSplit: row[5] === "是" || row[5] === true,
   })).filter(event => event.id);
-  return {
-    ok: true,
-    currentEventId: PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01",
-    events: events,
-  };
+}
+
+function readFamilyReplies_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.pre);
+  if (sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.pre].length).getValues()
+    .map(row => ({
+      eventId: String(row[0] || "").padStart(2, "0"),
+      memberId: row[1] || "",
+      familyId: row[2] || "",
+      name: row[3] || "",
+      role: row[4] || "",
+      expected: row[5] || "未確認",
+      route: row[6] || "",
+      note: row[7] || "",
+      submittedAt: formatDateTimeValue_(row[8]),
+      syncedAt: formatDateTimeValue_(row[8]),
+    }))
+    .filter(row => row.eventId && row.memberId);
+}
+
+function readCheckinReplies_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.onsite);
+  if (sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.onsite].length).getValues()
+    .map(row => ({
+      eventId: String(row[0] || "").padStart(2, "0"),
+      memberId: row[1] || "",
+      familyId: row[2] || "",
+      name: row[3] || "",
+      role: row[4] || "",
+      group: row[5] || "",
+      squad: row[6] || "",
+      status: row[7] || "未確認",
+      am: row[8] === "是" || row[8] === true,
+      pm: row[9] === "是" || row[9] === true,
+      note: row[12] || "",
+      recorder: row[13] || "",
+      submittedAt: formatDateTimeValue_(row[14]),
+      syncedAt: formatDateTimeValue_(row[14]),
+    }))
+    .filter(row => row.eventId && row.memberId);
 }
 
 function formatDateValue_(value) {
   if (!value) return "";
   if (Object.prototype.toString.call(value) === "[object Date]") {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return String(value);
+}
+
+function formatDateTimeValue_(value) {
+  if (!value) return "";
+  if (Object.prototype.toString.call(value) === "[object Date]") {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ssXXX");
   }
   return String(value);
 }
