@@ -147,7 +147,7 @@ h3 {
 
 .event-panel {
   display: grid;
-  grid-template-columns: 150px 170px minmax(220px, 1fr) repeat(3, minmax(180px, 1fr)) minmax(220px, 1fr) 130px;
+  grid-template-columns: 150px 170px minmax(220px, 1fr) repeat(3, minmax(180px, 1fr)) minmax(220px, 1fr) 130px 130px;
   gap: 12px;
   align-items: end;
   margin: 12px 0;

@@ -57,6 +57,7 @@ const preOpen = document.querySelector("#preOpen");
 const onsiteOpen = document.querySelector("#onsiteOpen");
 const scriptUrl = document.querySelector("#scriptUrl");
 const syncGoogle = document.querySelector("#syncGoogle");
+const refreshReplies = document.querySelector("#refreshReplies");
 const clearLocalTestData = document.querySelector("#clearLocalTestData");
 const openState = document.querySelector("#openState");
 const metricGrid = document.querySelector("#metricGrid");
@@ -147,6 +148,7 @@ function setup() {
     localStorage.setItem(SCRIPT_URL_KEY, normalize(scriptUrl.value));
   });
   syncGoogle.addEventListener("click", () => syncToGoogle({ intent: "admin" }));
+  if (refreshReplies) refreshReplies.addEventListener("click", refreshBackendReplies);
   clearLocalTestData.addEventListener("click", () => {
     if (!confirm("確定清除這台裝置上的測試點名資料？Apps Script URL 會保留，後端資料不會刪除。")) return;
     localStorage.removeItem(STORAGE_KEY);
@@ -385,6 +387,22 @@ async function syncToGoogle(options = {}) {
         syncGoogle.textContent = "同步 Google";
       }, 1800);
     }
+  }
+}
+
+async function refreshBackendReplies() {
+  if (!refreshReplies) return;
+  const originalText = refreshReplies.textContent;
+  refreshReplies.textContent = "讀取中";
+  refreshReplies.disabled = true;
+  try {
+    const loaded = await loadBackendSnapshotFromGoogle();
+    refreshReplies.textContent = loaded ? "已更新" : "讀取失敗";
+  } finally {
+    setTimeout(() => {
+      refreshReplies.disabled = false;
+      refreshReplies.textContent = originalText || "重新讀取回覆";
+    }, 1600);
   }
 }
 
@@ -1722,6 +1740,6 @@ function syncStatusText(item) {
   if (!normalize(scriptUrl.value)) return "尚未送後端：未設定 Apps Script URL";
   if (item?.syncStatus === "sent") return "已送後端";
   if (item?.syncStatus === "pending") return "同步後端中";
-  if (item?.syncStatus === "failed") return "尚未送後端：請按同步 Google";
+  if (item?.syncStatus === "failed") return "尚未送後端：請重新送出或洽點名人員";
   return "尚未送後端";
 }

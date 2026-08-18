@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>115桃一點名表管理版</title>
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
   <main class="app-shell">
@@ -45,7 +45,8 @@
         <span>Apps Script URL</span>
         <input id="scriptUrl" type="url" placeholder="部署後貼上 Web App URL">
       </label>
-      <button id="syncGoogle" type="button">同步 Google</button>
+      <button id="refreshReplies" type="button">重新讀取回覆</button>
+      <button id="syncGoogle" type="button">同步設定</button>
       <button id="clearLocalTestData" type="button" class="danger-outline">清除本機測試資料</button>
     </section>
 
@@ -189,8 +190,8 @@
     </article>
   </template>
 
-  <script src="data.js?v=8"></script>
-  <script src="config.js?v=8"></script>
-  <script src="app.js?v=8"></script>
+  <script src="data.js?v=9"></script>
+  <script src="config.js?v=9"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
