@@ -410,6 +410,8 @@ function markSubmissionsSynced(intent) {
 }
 
 function buildSyncPayload(intent = "admin") {
+  const familyConfirmations = syncFamilyConfirmations(intent);
+  const checkinSubmissions = syncCheckinSubmissions(intent);
   return {
     action: "snapshot",
     intent,
@@ -418,13 +420,47 @@ function buildSyncPayload(intent = "admin") {
     currentEventId: state.currentEventId,
     events: state.events,
     members: state.members,
-    records: Object.values(state.records),
-    familyConfirmations: state.familyConfirmations || {},
-    checkinSubmissions: state.checkinSubmissions || {},
+    records: syncRecords(intent, familyConfirmations, checkinSubmissions),
+    familyConfirmations,
+    checkinSubmissions,
     rules: state.rules,
     overview: buildOverviewRows(),
     annual: buildAnnualRows(),
   };
+}
+
+function syncFamilyConfirmations(intent) {
+  if (intent !== "family") return {};
+  return Object.fromEntries(Object.entries(state.familyConfirmations || {})
+    .filter(([, confirmation]) => confirmation.syncStatus !== "sent"));
+}
+
+function syncCheckinSubmissions(intent) {
+  if (intent !== "checkin") return {};
+  return Object.fromEntries(Object.entries(state.checkinSubmissions || {})
+    .filter(([, submission]) => submission.syncStatus !== "sent"));
+}
+
+function syncRecords(intent, familyConfirmations, checkinSubmissions) {
+  const records = Object.values(state.records);
+  if (intent === "family") {
+    return records.filter((record) => {
+      const member = memberById(record.memberId) || {};
+      return Boolean(familyConfirmations[familyConfirmKeyFor(record.eventId, member.familyId || "")]);
+    });
+  }
+  if (intent === "checkin") {
+    return records.filter((record) => {
+      const member = memberById(record.memberId) || {};
+      const key = checkinSubmissionKeyFor(record.eventId, resolveCheckinGroup(member), resolveCheckinSquad(member));
+      return Boolean(checkinSubmissions[key]);
+    });
+  }
+  return records;
+}
+
+function memberById(memberId) {
+  return state.members.find((member) => member.id === memberId) || null;
 }
 
 function buildOverviewRows() {
