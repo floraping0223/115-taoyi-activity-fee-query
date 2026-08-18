@@ -370,8 +370,8 @@ async function syncToGoogle(options = {}) {
       body: JSON.stringify(buildSyncPayload()),
     });
     markSubmissionsSynced();
-    await loadBackendSnapshotFromGoogle();
-    if (!silent) syncGoogle.textContent = "已同步";
+    const loaded = await loadBackendSnapshotFromGoogle();
+    if (!silent) syncGoogle.textContent = loaded ? "已同步" : "已送出";
     return true;
   } catch (error) {
     if (!silent) syncGoogle.textContent = "同步失敗";
