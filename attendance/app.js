@@ -506,12 +506,13 @@ function buildAnnualRows() {
     let total = 0;
     const eventValues = state.events.map((event) => {
       const record = getRecord(member.id, event.id);
-      const weight = recordWeight(record.status);
+      const status = annualStatus(record);
+      const weight = recordWeight(status);
       total += weight;
-      updateAnnualCounts(counts, record.status);
-      return record.status === "未確認" ? "" : weight;
+      updateAnnualCounts(counts, status);
+      return status === "未確認" ? "" : weight;
     });
-    const completed = state.events.filter((event) => getRecord(member.id, event.id).status !== "未確認").length;
+    const completed = state.events.filter((event) => annualStatus(getRecord(member.id, event.id)) !== "未確認").length;
     return {
       personId: member.id,
       familyId: member.familyId,
@@ -1139,14 +1140,15 @@ function renderAnnual() {
     const counts = { normal: 0, late: 0, morning: 0, afternoon: 0, absent: 0 };
     const cells = state.events.map((event) => {
       const record = getRecord(member.id, event.id);
-      const weight = recordWeight(record.status);
+      const status = annualStatus(record);
+      const weight = recordWeight(status);
       total += weight;
-      updateAnnualCounts(counts, record.status);
+      updateAnnualCounts(counts, status);
       const cls = weight === 0 ? "ok" : weight < 1 ? "warn" : "bad";
-      const text = record.status === "未確認" ? "-" : String(weight);
+      const text = status === "未確認" ? "-" : String(weight);
       return `<span class="annual-cell ${cls}">${text}</span>`;
     }).join("");
-    const completed = state.events.filter((event) => getRecord(member.id, event.id).status !== "未確認").length;
+    const completed = state.events.filter((event) => annualStatus(getRecord(member.id, event.id)) !== "未確認").length;
     const attendanceRate = completed ? Math.round(((completed - total) / completed) * 100) : 0;
     return `<article class="annual-row"><strong>家庭 ${member.familyId}</strong><span>${member.name}｜${member.group}｜${member.squad}</span>${cells}<span class="annual-total">缺席 ${total}<br><span class="annual-detail">正常 ${counts.normal}｜遲到 ${counts.late}｜上午 ${counts.morning}｜下午 ${counts.afternoon}｜缺席 ${counts.absent}｜出席率 ${attendanceRate}%</span></span></article>`;
   }).join("");
@@ -1264,6 +1266,13 @@ function updateAnnualCounts(counts, status) {
   if (isAfternoonLeave(status)) counts.morning += 1;
   if (isMorningLeave(status)) counts.afternoon += 1;
   if (status === "未到" || status === "請假") counts.absent += 1;
+}
+
+function annualStatus(record) {
+  if (record.status && record.status !== "未確認") return normalizePartialLeaveStatus(record.status);
+  const expected = normalizePartialLeaveStatus(record.expected);
+  if (["請假", "上午請假", "下午請假"].includes(expected)) return expected;
+  return "未確認";
 }
 
 function findFamilyAlerts() {

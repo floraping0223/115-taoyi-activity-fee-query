@@ -8,6 +8,7 @@ const SHEETS = {
   rules: "出勤規則",
   overview: "當日總覽",
   annual: "全年總表",
+  check: "系統檢查",
   mapping: "欄位對照",
   missing: "待補資料",
 };
@@ -22,6 +23,7 @@ const HEADERS = {
   [SHEETS.rules]: ["狀態", "缺席權重", "適用對象", "備註"],
   [SHEETS.overview]: ["場次", "群組", "小隊", "預計出席", "上午實到", "下午實到", "遲到", "未到", "親子陪同異常"],
   [SHEETS.annual]: ["人員ID", "家庭編號", "自然名", "分團", "小隊", "場次01", "場次02", "場次03", "場次04", "場次05", "場次06", "場次07", "場次08", "場次09", "場次10", "場次11", "場次12", "正常", "遲到", "上午", "下午", "全天缺席", "累計缺席", "出席率"],
+  [SHEETS.check]: ["檢查時間", "資料表", "檢查項目", "結果", "說明"],
   [SHEETS.mapping]: ["原始Excel欄位", "系統欄位", "處理方式", "備註"],
   [SHEETS.missing]: ["資料類型", "家庭編號", "自然名", "缺少欄位", "影響", "處理狀態"],
 };
@@ -62,16 +64,19 @@ function setupWorkbook_() {
 
 function writeSnapshot_(payload) {
   PropertiesService.getDocumentProperties().setProperty("currentEventId", payload.currentEventId || "01");
+  const isAdminSync = payload.intent === "admin";
 
-  writeSheet_(SHEETS.members, (payload.members || []).map(member => [
-    member.id, member.familyId, member.name, member.role, member.group, member.squad,
-    member.sourceGroup || "", member.eagleQualified ? "是" : "否", "是", "",
-  ]));
+  if (isAdminSync) {
+    writeSheet_(SHEETS.members, (payload.members || []).map(member => [
+      member.id, member.familyId, member.name, member.role, member.group, member.squad,
+      member.sourceGroup || "", member.eagleQualified ? "是" : "否", "是", "",
+    ]));
 
-  writeSheet_(SHEETS.events, (payload.events || []).map(event => [
-    event.id, event.date || "", event.name || "", yes_(event.preOpen), yes_(event.onsiteOpen),
-    yes_(event.eagleSplit), event.preOpen || event.onsiteOpen ? "開放" : "尚未開放", "",
-  ]));
+    writeSheet_(SHEETS.events, (payload.events || []).map(event => [
+      event.id, event.date || "", event.name || "", yes_(event.preOpen), yes_(event.onsiteOpen),
+      yes_(event.eagleSplit), event.preOpen || event.onsiteOpen ? "開放" : "尚未開放", "",
+    ]));
+  }
 
   const memberById = {};
   (payload.members || []).forEach(member => memberById[member.id] = member);
@@ -106,9 +111,11 @@ function writeSnapshot_(payload) {
       yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || ""];
   }) : [], row => [row[0], row[1]].join("|"));
 
-  writeSheet_(SHEETS.splits, (payload.events || []).map(event => [
-    event.id, "老鷹單飛活動", yes_(event.eagleSplit), "成人屬育成會且所屬分團包含「鷹」", "育成鷹團", "依個人會前選擇分流",
-  ]));
+  if (isAdminSync) {
+    writeSheet_(SHEETS.splits, (payload.events || []).map(event => [
+      event.id, "老鷹單飛活動", yes_(event.eagleSplit), "成人屬育成會且所屬分團包含「鷹」", "育成鷹團", "依個人會前選擇分流",
+    ]));
+  }
 
   appendUniqueRows_(SHEETS.work, shouldAppendCheckinReplies ? records.filter(record => {
     if (!record.work && !record.workGroup && !record.workRole) return false;
@@ -124,27 +131,33 @@ function writeSnapshot_(payload) {
       group, squad, record.expected || "", record.workGroup || "", record.workRole || "", record.work || "", ""];
   }) : [], row => [row[0], row[1]].join("|"));
 
-  writeSheet_(SHEETS.rules, Object.keys(payload.rules || {}).map(status => [
-    status, payload.rules[status], "小孩", "",
-  ]));
+  if (isAdminSync) {
+    writeSheet_(SHEETS.rules, Object.keys(payload.rules || {}).map(status => [
+      status, payload.rules[status], "小孩", "",
+    ]));
 
-  writeSheet_(SHEETS.overview, (payload.overview || []).map(row => [
-    row.eventId, row.group, row.squad, row.expected, row.morning, row.afternoon, row.late, row.absent, row.familyAlerts,
-  ]));
+    writeSheet_(SHEETS.overview, (payload.overview || []).map(row => [
+      row.eventId, row.group, row.squad, row.expected, row.morning, row.afternoon, row.late, row.absent, row.familyAlerts,
+    ]));
 
-  writeSheet_(SHEETS.annual, (payload.annual || []).map(row => [
-    row.personId, row.familyId, row.name, row.group, row.squad,
-    ...(row.events || Array(12).fill("")).slice(0, 12),
-    row.normal, row.late, row.morning, row.afternoon, row.absent, row.totalAbsence, row.attendanceRate,
-  ]));
+    writeSheet_(SHEETS.annual, (payload.annual || []).map(row => [
+      row.personId, row.familyId, row.name, row.group, row.squad,
+      ...(row.events || Array(12).fill("")).slice(0, 12),
+      row.normal, row.late, row.morning, row.afternoon, row.absent, row.totalAbsence, row.attendanceRate,
+    ]));
+  }
 
-  writeSheet_(SHEETS.mapping, [
-    ["家庭編號", "家庭編號", "直接匯入", "家庭串聯 Key"],
-    ["自然名", "自然名", "直接匯入", ""],
-    ["屬性（家長/小孩）", "屬性", "直接匯入/正規化", "成人、小孩"],
-    ["所屬分團", "所屬分團", "直接匯入", "包含鷹則可選老鷹單飛活動"],
-    ["所屬小隊", "小隊", "直接匯入", ""],
-  ]);
+  writeSystemCheck_();
+
+  if (isAdminSync) {
+    writeSheet_(SHEETS.mapping, [
+      ["家庭編號", "家庭編號", "直接匯入", "家庭串聯 Key"],
+      ["自然名", "自然名", "直接匯入", ""],
+      ["屬性（家長/小孩）", "屬性", "直接匯入/正規化", "成人、小孩"],
+      ["所屬分團", "所屬分團", "直接匯入", "包含鷹則可選老鷹單飛活動"],
+      ["所屬小隊", "小隊", "直接匯入", ""],
+    ]);
+  }
 }
 
 function readBackendSnapshot_() {
@@ -268,6 +281,45 @@ function appendUniqueRows_(name, rows, keyGetter) {
   formatSheet_(sheet);
 }
 
+function writeSystemCheck_() {
+  const now = new Date();
+  const rows = []
+    .concat(checkDuplicateRows_(SHEETS.pre, row => [row[0], row[1]].join("|"), "同一場次+同一人員"))
+    .concat(checkDuplicateRows_(SHEETS.onsite, row => [row[0], row[1]].join("|"), "同一場次+同一人員"))
+    .concat(checkDuplicateRows_(SHEETS.work, row => [row[0], row[1]].join("|"), "同一場次+同一人員"))
+    .concat(checkRequiredSheet_(SHEETS.members))
+    .concat(checkRequiredSheet_(SHEETS.events))
+    .concat(checkRequiredSheet_(SHEETS.pre))
+    .concat(checkRequiredSheet_(SHEETS.onsite))
+    .concat(checkRequiredSheet_(SHEETS.work))
+    .map(row => [now].concat(row));
+  writeSheet_(SHEETS.check, rows.length ? rows : [[now, "全部", "基本檢查", "正常", "目前沒有發現重複或缺表。"]]);
+}
+
+function checkDuplicateRows_(name, keyGetter, label) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet || sheet.getLastRow() <= 1) return [[name, label, "正常", "目前沒有重複資料。"]];
+  const width = HEADERS[name].length;
+  const counts = {};
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues().forEach(row => {
+    const key = keyGetter(row);
+    if (!key || key === "|") return;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const duplicates = Object.keys(counts).filter(key => counts[key] > 1);
+  if (!duplicates.length) return [[name, label, "正常", "目前沒有重複資料。"]];
+  return duplicates.map(key => [name, label, "異常", key + " 重複 " + counts[key] + " 筆"]);
+}
+
+function checkRequiredSheet_(name) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sheet) return [[name, "分頁存在", "異常", "找不到這張分頁。"]];
+  const headers = sheet.getRange(1, 1, 1, HEADERS[name].length).getValues()[0];
+  const mismatch = HEADERS[name].filter((header, index) => headers[index] !== header);
+  if (mismatch.length) return [[name, "欄位標題", "異常", "第 1 列欄位與系統設定不一致。"]];
+  return [[name, "欄位標題", "正常", ""]];
+}
+
 function ensureHeaders_(sheet, name) {
   const headers = HEADERS[name];
   if (sheet.getLastRow() === 0) {
@@ -339,7 +391,6 @@ function formatSheet_(sheet) {
     .setFontWeight("bold")
     .setFontColor("#ffffff")
     .setBackground("#24435c");
-  sheet.autoResizeColumns(1, lastColumn);
 }
 
 function text_(content) {
