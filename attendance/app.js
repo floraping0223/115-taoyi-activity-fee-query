@@ -145,7 +145,7 @@ function setup() {
   scriptUrl.addEventListener("change", () => {
     localStorage.setItem(SCRIPT_URL_KEY, normalize(scriptUrl.value));
   });
-  syncGoogle.addEventListener("click", () => syncToGoogle());
+  syncGoogle.addEventListener("click", () => syncToGoogle({ intent: "admin" }));
   clearLocalTestData.addEventListener("click", () => {
     if (!confirm("確定清除這台裝置上的測試點名資料？Apps Script URL 會保留，後端資料不會刪除。")) return;
     localStorage.removeItem(STORAGE_KEY);
@@ -353,6 +353,7 @@ function mergeRecordField(record, key, value) {
 
 async function syncToGoogle(options = {}) {
   const silent = Boolean(options.silent);
+  const intent = options.intent || (APP_MODE === "family" ? "family" : "admin");
   const url = normalize(scriptUrl.value);
   if (!url) {
     if (!silent) alert("請先貼上 Apps Script Web App URL。");
@@ -367,9 +368,9 @@ async function syncToGoogle(options = {}) {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(buildSyncPayload()),
+      body: JSON.stringify(buildSyncPayload(intent)),
     });
-    markSubmissionsSynced();
+    markSubmissionsSynced(intent);
     const loaded = await loadBackendSnapshotFromGoogle();
     if (!silent) syncGoogle.textContent = loaded ? "已同步" : "已送出";
     return true;
@@ -386,26 +387,32 @@ async function syncToGoogle(options = {}) {
   }
 }
 
-function markSubmissionsSynced() {
+function markSubmissionsSynced(intent) {
   const syncedAt = new Date().toISOString();
-  Object.values(state.familyConfirmations || {}).forEach((item) => {
-    if (item.syncStatus !== "sent") {
-      item.syncStatus = "sent";
-      item.syncedAt = syncedAt;
-    }
-  });
-  Object.values(state.checkinSubmissions || {}).forEach((item) => {
-    if (item.syncStatus !== "sent") {
-      item.syncStatus = "sent";
-      item.syncedAt = syncedAt;
-    }
-  });
+  if (intent === "family") {
+    Object.values(state.familyConfirmations || {}).forEach((item) => {
+      if (item.syncStatus !== "sent") {
+        item.syncStatus = "sent";
+        item.syncedAt = syncedAt;
+      }
+    });
+  }
+  if (intent === "checkin") {
+    Object.values(state.checkinSubmissions || {}).forEach((item) => {
+      if (item.syncStatus !== "sent") {
+        item.syncStatus = "sent";
+        item.syncedAt = syncedAt;
+      }
+    });
+  }
   saveState();
 }
 
-function buildSyncPayload() {
+function buildSyncPayload(intent = "admin") {
   return {
     action: "snapshot",
+    intent,
+    appMode: APP_MODE,
     syncedAt: new Date().toISOString(),
     currentEventId: state.currentEventId,
     events: state.events,
@@ -727,7 +734,7 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
     state.familyConfirmations[key] = { submittedAt: new Date().toISOString(), syncStatus: "pending" };
     saveState();
     renderFamily();
-    const synced = await syncToGoogle({ silent: true });
+    const synced = await syncToGoogle({ silent: true, intent: "family" });
     state.familyConfirmations[key].syncStatus = synced ? "sent" : "failed";
     state.familyConfirmations[key].syncedAt = synced ? new Date().toISOString() : "";
     saveState();
@@ -803,7 +810,7 @@ function renderCheckinSubmitPanel(submission) {
     delete state.checkinRecorderDrafts[key];
     saveState();
     render();
-    const synced = await syncToGoogle({ silent: true });
+    const synced = await syncToGoogle({ silent: true, intent: "checkin" });
     state.checkinSubmissions[key].syncStatus = synced ? "sent" : "failed";
     state.checkinSubmissions[key].syncedAt = synced ? new Date().toISOString() : "";
     saveState();

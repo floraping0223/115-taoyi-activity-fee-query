@@ -78,8 +78,10 @@ function writeSnapshot_(payload) {
   const records = payload.records || [];
   const familyConfirmations = payload.familyConfirmations || {};
   const checkinSubmissions = payload.checkinSubmissions || {};
+  const shouldAppendFamilyReplies = payload.intent === "family";
+  const shouldAppendCheckinReplies = payload.intent === "checkin";
 
-  appendUniqueRows_(SHEETS.pre, records.filter(record => {
+  appendUniqueRows_(SHEETS.pre, shouldAppendFamilyReplies ? records.filter(record => {
     const member = memberById[record.memberId] || {};
     return Boolean(familyConfirmations[familyConfirmKey_(record.eventId, member.familyId || "")]);
   }).map(record => {
@@ -87,9 +89,9 @@ function writeSnapshot_(payload) {
     const confirmation = familyConfirmations[familyConfirmKey_(record.eventId, member.familyId || "")] || {};
     return [record.eventId, record.memberId, member.familyId || "", member.name || "", member.role || "",
       record.expected || "", record.route || "", record.note || "", confirmation.submittedAt || payload.syncedAt || ""];
-  }), row => [row[0], row[1]].join("|"));
+  }) : [], row => [row[0], row[1]].join("|"));
 
-  appendUniqueRows_(SHEETS.onsite, records.filter(record => {
+  appendUniqueRows_(SHEETS.onsite, shouldAppendCheckinReplies ? records.filter(record => {
     const member = memberById[record.memberId] || {};
     const group = resolveCheckinGroup_(member, record, payload.events || []);
     const squad = resolveCheckinSquad_(member, record, payload.events || []);
@@ -102,13 +104,13 @@ function writeSnapshot_(payload) {
     return [record.eventId, record.memberId, member.familyId || "", member.name || "", member.role || "",
       group, squad, record.status || "", yes_(record.am), yes_(record.pm), yes_(record.status === "遲到"),
       yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || ""];
-  }), row => [row[0], row[1]].join("|"));
+  }) : [], row => [row[0], row[1]].join("|"));
 
   writeSheet_(SHEETS.splits, (payload.events || []).map(event => [
     event.id, "老鷹單飛活動", yes_(event.eagleSplit), "成人屬育成會且所屬分團包含「鷹」", "育成鷹團", "依個人會前選擇分流",
   ]));
 
-  appendUniqueRows_(SHEETS.work, records.filter(record => {
+  appendUniqueRows_(SHEETS.work, shouldAppendCheckinReplies ? records.filter(record => {
     if (!record.work && !record.workGroup && !record.workRole) return false;
     const member = memberById[record.memberId] || {};
     const group = resolveCheckinGroup_(member, record, payload.events || []);
@@ -120,7 +122,7 @@ function writeSnapshot_(payload) {
     const squad = resolveCheckinSquad_(member, record, payload.events || []);
     return [record.eventId, record.memberId, member.familyId || "", member.name || "",
       group, squad, record.expected || "", record.workGroup || "", record.workRole || "", record.work || "", ""];
-  }), row => [row[0], row[1]].join("|"));
+  }) : [], row => [row[0], row[1]].join("|"));
 
   writeSheet_(SHEETS.rules, Object.keys(payload.rules || {}).map(status => [
     status, payload.rules[status], "小孩", "",
