@@ -66,6 +66,7 @@ const familySearch = document.querySelector("#familySearch");
 const loadFamily = document.querySelector("#loadFamily");
 const familyCards = document.querySelector("#familyCards");
 const familyConfirmPanel = document.querySelector("#familyConfirmPanel");
+const familyEventSummary = document.querySelector("#familyEventSummary");
 const expectedLists = document.querySelector("#expectedLists");
 const entranceGrid = document.querySelector("#entranceGrid");
 const boardTitle = document.querySelector("#boardTitle");
@@ -340,6 +341,7 @@ function buildAnnualRows() {
 
 function render() {
   openState.textContent = `第 ${currentEvent().id} 場`;
+  renderFamilyEventSummary();
   renderMetrics();
   renderAlerts();
   renderOverviewGroups();
@@ -348,6 +350,26 @@ function render() {
   if (activeView === "expected") renderExpectedLists();
   if (activeView === "checkin") renderCheckin();
   if (activeView === "annual") renderAnnual();
+}
+
+function renderFamilyEventSummary() {
+  if (!familyEventSummary) return;
+  const event = currentEvent();
+  const eventDateText = event.date ? event.date : "尚未設定";
+  familyEventSummary.innerHTML = `
+    <div>
+      <span>活動場次</span>
+      <strong>第 ${event.id} 場</strong>
+    </div>
+    <div>
+      <span>活動日期</span>
+      <strong>${escapeHtml(eventDateText)}</strong>
+    </div>
+    <div>
+      <span>活動名稱</span>
+      <strong>${escapeHtml(event.name || "尚未設定")}</strong>
+    </div>
+  `;
 }
 
 function syncEventFields() {
