@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>115桃一點名表管理版</title>
-  <link rel="stylesheet" href="styles.css?v=11">
+  <title>115桃一現場點名版</title>
+  <link rel="stylesheet" href="../styles.css?v=11">
 </head>
-<body>
+<body data-app-mode="checkin">
   <main class="app-shell">
     <header class="app-header">
       <div>
         <p class="eyebrow">桃一親子團</p>
-        <h1>115桃一點名表管理版</h1>
+        <h1>115桃一現場點名版</h1>
       </div>
       <div class="event-badge" id="openState">第 1 場</div>
     </header>
@@ -43,22 +43,21 @@
       </label>
       <label>
         <span>Apps Script URL</span>
-        <input id="scriptUrl" type="url" placeholder="部署後貼上 Web App URL">
+        <input id="scriptUrl" type="url">
       </label>
       <button id="refreshReplies" type="button">重新讀取回覆</button>
-      <button id="syncGoogle" type="button" class="danger">同步設定(勿按)</button>
-      <button id="clearLocalTestData" type="button" class="danger-outline">清除本機測試資料</button>
+      <button id="syncGoogle" type="button">同步設定</button>
+      <button id="clearLocalTestData" type="button">清除本機測試資料</button>
     </section>
 
     <nav class="tabbar" aria-label="主要頁面">
-      <button class="tab-button is-active" type="button" data-view="overview">總覽</button>
-      <button class="tab-button" type="button" data-view="family">家庭確認</button>
+      <button class="tab-button" type="button" data-view="overview">總覽</button>
       <button class="tab-button" type="button" data-view="expected">預計名單</button>
-      <button class="tab-button" type="button" data-view="checkin">現場點名</button>
+      <button class="tab-button is-active" type="button" data-view="checkin">現場點名</button>
       <button class="tab-button" type="button" data-view="annual">全年總表</button>
     </nav>
 
-    <section id="overviewView" class="view is-active" aria-label="當日管理總覽">
+    <section id="overviewView" class="view" aria-label="當日管理總覽">
       <div class="metric-grid" id="metricGrid"></div>
       <section class="alert-panel">
         <div>
@@ -74,7 +73,7 @@
       <div class="family-lookup">
         <label>
           <span>輸入家庭編號</span>
-          <input id="familySearch" type="search" inputmode="numeric" placeholder="例如 16">
+          <input id="familySearch" type="search" inputmode="numeric">
         </label>
         <button id="loadFamily" type="button">載入家庭</button>
       </div>
@@ -88,13 +87,13 @@
           <p class="eyebrow">會前自動產生</p>
           <h2>本場會前回覆與預計名單</h2>
         </div>
-        <p>依家庭確認結果分流。育成會與老鷹單飛入口可在這裡安排家長支援團隊與職務；若選小蟻團、炫蜂團、奔鹿團，會進入該團團隊現場點名。</p>
+        <p>依家庭確認結果分流。家長支援團隊與職務由管理版設定，現場版僅供查看。</p>
       </div>
       <div id="preReplyLists" class="pre-reply-lists"></div>
       <div id="expectedLists" class="expected-lists"></div>
     </section>
 
-    <section id="checkinView" class="view" aria-label="現場點名">
+    <section id="checkinView" class="view is-active" aria-label="現場點名">
       <div class="entrance-grid" id="entranceGrid"></div>
       <section class="checkin-board">
         <div class="board-toolbar">
@@ -190,8 +189,8 @@
     </article>
   </template>
 
-  <script src="data.js?v=11"></script>
-  <script src="config.js?v=11"></script>
-  <script src="app.js?v=11"></script>
+  <script src="../data.js?v=11"></script>
+  <script src="../config.js?v=11"></script>
+  <script src="../app.js?v=11"></script>
 </body>
 </html>

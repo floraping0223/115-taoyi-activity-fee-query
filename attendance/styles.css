@@ -455,6 +455,24 @@ label span {
   margin-bottom: 16px;
 }
 
+.checkin-mode .event-panel,
+.checkin-mode #familyView,
+.checkin-mode .rules-panel {
+  display: none !important;
+}
+
+.checkin-mode .app-header {
+  margin-bottom: 12px;
+}
+
+.checkin-mode .tabbar {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.checkin-mode .expected-header p {
+  max-width: 620px;
+}
+
 .family-event-summary {
   display: grid;
   grid-template-columns: 120px 150px minmax(180px, 1fr);

@@ -45,7 +45,7 @@ const DEFAULT_RULES = {
 };
 
 const state = loadState();
-let activeView = APP_MODE === "family" ? "family" : "overview";
+let activeView = APP_MODE === "family" ? "family" : APP_MODE === "checkin" ? "checkin" : "overview";
 let activeEntrance = "小蟻";
 let activeSquad = "全部";
 
@@ -97,6 +97,7 @@ render();
 
 function setup() {
   document.body.classList.toggle("family-mode", APP_MODE === "family");
+  document.body.classList.toggle("checkin-mode", APP_MODE === "checkin");
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.view === activeView);
   });
@@ -363,8 +364,10 @@ async function syncToGoogle(options = {}) {
     return false;
   }
   if (!silent) {
+    const originalText = syncGoogle.textContent;
     syncGoogle.textContent = "同步中";
     syncGoogle.disabled = true;
+    syncGoogle.dataset.originalText = originalText;
   }
   try {
     await fetch(url, {
@@ -384,7 +387,7 @@ async function syncToGoogle(options = {}) {
     if (!silent) {
       setTimeout(() => {
         syncGoogle.disabled = false;
-        syncGoogle.textContent = "同步 Google";
+        syncGoogle.textContent = syncGoogle.dataset.originalText || "同步設定(勿按)";
       }, 1800);
     }
   }
@@ -766,7 +769,7 @@ function renderExpectedCard(entry) {
 function renderExpectedRow(member) {
   const record = getRecord(member.id);
   const needsWork = isAdult(member) && (resolveGroup(member) === "育成會" || resolveGroup(member) === "育成鷹團");
-  const work = needsWork
+  const work = needsWork && APP_MODE !== "checkin"
     ? `<div class="work-assignment">
         <select data-work-group="${member.id}" aria-label="支援團隊">
           <option value="">原點名入口</option>
@@ -774,7 +777,7 @@ function renderExpectedRow(member) {
         </select>
         <input data-work-role="${member.id}" type="text" value="${escapeAttribute(record.workRole || record.work)}" placeholder="職務註記：支援人力、安全官">
       </div>`
-    : `<span>--</span>`;
+    : `<span>${escapeHtml(formatWorkAssignment(record) || "--")}</span>`;
   return `
     <div class="expected-row">
       <span>家庭 ${member.familyId}</span>
