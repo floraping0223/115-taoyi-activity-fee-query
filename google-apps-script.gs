@@ -17,7 +17,7 @@ const HEADERS = {
   [SHEETS.members]: ["人員ID", "家庭編號", "自然名", "屬性", "分團", "小隊", "所屬分團", "育成鷹資格", "啟用", "備註"],
   [SHEETS.events]: ["場次", "活動日期", "活動名稱", "會前確認開放", "現場點名開放", "育成鷹團分流", "狀態", "備註"],
   [SHEETS.pre]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "預計時段", "活動去向", "請假事由", "回覆時間"],
-  [SHEETS.onsite]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "主要點名群組", "小隊", "現場狀態", "上午實到", "下午13:00實到", "遲到", "臨時出席", "備註", "點名人員", "更新時間", "點名時段"],
+  [SHEETS.onsite]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "主要點名群組", "小隊", "現場狀態", "上午實到", "下午13:00實到", "遲到", "下午遲到", "臨時出席", "備註", "點名人員", "更新時間", "點名時段"],
   [SHEETS.splits]: ["場次", "分流名稱", "啟用", "資格規則", "主要點名群組", "備註"],
   [SHEETS.work]: ["場次", "人員ID", "家庭編號", "自然名", "主要點名群組", "小隊", "預計時段", "支援團隊", "職務註記", "工作分配", "備註"],
   [SHEETS.rules]: ["狀態", "缺席權重", "適用對象", "備註"],
@@ -108,10 +108,11 @@ function writeSnapshot_(payload) {
     const squad = resolveCheckinSquad_(member, record, payload.events || []);
     const period = record.checkinPeriod || payload.checkinPeriod || "am";
     const submission = checkinSubmissions[checkinSubmissionKey_(record.eventId, group, squad, period)] || {};
+    const statusText = String(record.status || "");
     return [record.eventId, record.memberId, member.familyId || "", member.name || "", member.role || "",
-      group, squad, record.status || "", yes_(record.am), yes_(record.pm), yes_(String(record.status || "").indexOf("遲到") >= 0),
+      group, squad, record.status || "", yes_(record.am), yes_(record.pm), yes_(statusText === "遲到"), yes_(statusText === "下午遲到"),
       yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || "", checkinPeriodLabel_(period)];
-  }) : [], row => [row[0], row[1], row[15] || "上午"].join("|"));
+  }) : [], row => [row[0], row[1], row[16] || "上午"].join("|"));
 
   if (isAdminSync) {
     writeSheet_(SHEETS.splits, (payload.events || []).map(event => [
@@ -224,11 +225,11 @@ function readCheckinReplies_() {
       status: row[7] || "未確認",
       am: row[8] === "是" || row[8] === true,
       pm: row[9] === "是" || row[9] === true,
-      note: row[12] || "",
-      recorder: row[13] || "",
-      submittedAt: formatDateTimeValue_(row[14]),
-      syncedAt: formatDateTimeValue_(row[14]),
-      period: row[15] || "",
+      note: row[13] || "",
+      recorder: row[14] || "",
+      submittedAt: formatDateTimeValue_(row[15]),
+      syncedAt: formatDateTimeValue_(row[15]),
+      period: row[16] || "",
     }))
     .filter(row => row.eventId && row.memberId);
 }
@@ -288,7 +289,7 @@ function writeSystemCheck_() {
   const now = new Date();
   const rows = []
     .concat(checkDuplicateRows_(SHEETS.pre, row => [row[0], row[1]].join("|"), "同一場次+同一人員"))
-    .concat(checkDuplicateRows_(SHEETS.onsite, row => [row[0], row[1], row[15] || "上午"].join("|"), "同一場次+同一人員+同一時段"))
+    .concat(checkDuplicateRows_(SHEETS.onsite, row => [row[0], row[1], row[16] || "上午"].join("|"), "同一場次+同一人員+同一時段"))
     .concat(checkDuplicateRows_(SHEETS.work, row => [row[0], row[1]].join("|"), "同一場次+同一人員"))
     .concat(checkRequiredSheet_(SHEETS.members))
     .concat(checkRequiredSheet_(SHEETS.events))
