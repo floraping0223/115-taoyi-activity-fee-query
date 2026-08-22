@@ -22,7 +22,7 @@ const ENTRANCES = [
 ];
 
 const CHILD_STATUSES = ["出席", "遲到", "上午請假", "下午請假", "未到"];
-const ADULT_CHECKIN_STATUSES = ["出席", "遲到", "上午請假", "下午請假"];
+const ADULT_CHECKIN_STATUSES = ["上午實到", "遲到", "下午13:00實到", "下午遲到"];
 const FAMILY_STATUSES = ["全天出席", "上午請假", "下午請假", "請假"];
 const EAGLE_SOLO_ROUTE = "老鷹單飛活動";
 const ADULT_ROUTES = ["母團活動", EAGLE_SOLO_ROUTE];
@@ -36,6 +36,7 @@ const DEFAULT_RULES = {
   "出席": 0,
   "全天出席": 0,
   "遲到": 0.5,
+  "下午遲到": 0,
   "上午請假": 0.5,
   "下午請假": 0.5,
   "上午出席": 0.5,
@@ -48,6 +49,7 @@ const state = loadState();
 let activeView = APP_MODE === "family" ? "family" : APP_MODE === "checkin" ? "checkin" : "overview";
 let activeEntrance = "小蟻";
 let activeSquad = "全部";
+let activeCheckinPeriod = "am";
 
 const eventSelect = document.querySelector("#eventSelect");
 const eventDate = document.querySelector("#eventDate");
@@ -73,6 +75,7 @@ const expectedLists = document.querySelector("#expectedLists");
 const entranceGrid = document.querySelector("#entranceGrid");
 const boardTitle = document.querySelector("#boardTitle");
 const squadTabs = document.querySelector("#squadTabs");
+const checkinPeriodTabs = document.querySelector("#checkinPeriodTabs");
 const checkinRecorderPanel = document.querySelector("#checkinRecorderPanel");
 const checkinSubmitPanel = document.querySelector("#checkinSubmitPanel");
 const checkinList = document.querySelector("#checkinList");
@@ -328,15 +331,33 @@ function mergeBackendSnapshot(payload) {
     const member = state.members.find((item) => item.id === reply.memberId);
     if (!member) return;
     const record = getRecord(reply.memberId, reply.eventId);
-    if (mergeRecordField(record, "status", reply.status || "未確認")) changed = true;
-    if (mergeRecordField(record, "am", Boolean(reply.am))) changed = true;
-    if (mergeRecordField(record, "pm", Boolean(reply.pm))) changed = true;
+    if (reply.period === "上午") {
+      if (mergeRecordField(record, "am", Boolean(reply.am))) changed = true;
+      if (mergeRecordField(record, "amLate", reply.status === "遲到")) changed = true;
+      const nextStatus = deriveCheckinStatus(record, member);
+      if (mergeRecordField(record, "status", nextStatus)) changed = true;
+    } else if (reply.period === "下午") {
+      if (mergeRecordField(record, "pm", Boolean(reply.pm))) changed = true;
+      if (mergeRecordField(record, "pmLate", reply.status === "下午遲到")) changed = true;
+      const nextStatus = deriveCheckinStatus(record, member);
+      if (mergeRecordField(record, "status", nextStatus)) changed = true;
+    } else {
+      if (mergeRecordField(record, "status", reply.status || "未確認")) changed = true;
+      if (mergeRecordField(record, "am", Boolean(reply.am))) changed = true;
+      if (mergeRecordField(record, "pm", Boolean(reply.pm))) changed = true;
+      if (mergeRecordField(record, "amLate", reply.status === "遲到")) changed = true;
+      if (mergeRecordField(record, "pmLate", reply.status === "下午遲到")) changed = true;
+    }
     if (mergeRecordField(record, "note", reply.note || record.note || "")) changed = true;
-    const key = checkinSubmissionKeyFor(reply.eventId, reply.group, reply.squad);
+    const key = checkinSubmissionKeyFor(reply.eventId, reply.group, reply.squad, periodKeyFromLabel(reply.period));
     const submission = state.checkinSubmissions[key] || {};
     const nextSubmission = {
       recorder: reply.recorder || submission.recorder || "",
       submittedAt: reply.submittedAt || submission.submittedAt || "",
+      eventId: reply.eventId,
+      group: reply.group,
+      squad: reply.squad,
+      period: periodKeyFromLabel(reply.period),
       syncStatus: "sent",
       syncedAt: reply.syncedAt || submission.syncedAt || reply.submittedAt || "",
     };
@@ -421,7 +442,7 @@ function markSubmissionsSynced(intent) {
   }
   if (intent === "checkin") {
     Object.values(state.checkinSubmissions || {}).forEach((item) => {
-      if (item.syncStatus !== "sent") {
+      if (item.syncStatus !== "sent" && (item.period || "am") === activeCheckinPeriod) {
         item.syncStatus = "sent";
         item.syncedAt = syncedAt;
       }
@@ -439,6 +460,7 @@ function buildSyncPayload(intent = "admin") {
     appMode: APP_MODE,
     syncedAt: new Date().toISOString(),
     currentEventId: state.currentEventId,
+    checkinPeriod: activeCheckinPeriod,
     events: state.events,
     members: state.members,
     records: syncRecords(intent, familyConfirmations, checkinSubmissions),
@@ -459,7 +481,8 @@ function syncFamilyConfirmations(intent) {
 function syncCheckinSubmissions(intent) {
   if (intent !== "checkin") return {};
   return Object.fromEntries(Object.entries(state.checkinSubmissions || {})
-    .filter(([, submission]) => submission.syncStatus !== "sent"));
+    .filter(([, submission]) => submission.syncStatus !== "sent")
+    .filter(([, submission]) => (submission.period || "am") === activeCheckinPeriod));
 }
 
 function syncRecords(intent, familyConfirmations, checkinSubmissions) {
@@ -473,11 +496,37 @@ function syncRecords(intent, familyConfirmations, checkinSubmissions) {
   if (intent === "checkin") {
     return records.filter((record) => {
       const member = memberById(record.memberId) || {};
-      const key = checkinSubmissionKeyFor(record.eventId, resolveCheckinGroup(member), resolveCheckinSquad(member));
+      const key = checkinSubmissionKeyFor(record.eventId, resolveCheckinGroup(member), resolveCheckinSquad(member), activeCheckinPeriod);
       return Boolean(checkinSubmissions[key]);
-    });
+    }).map((record) => periodScopedRecord(record, activeCheckinPeriod));
   }
   return records;
+}
+
+function periodScopedRecord(record, period) {
+  const member = memberById(record.memberId) || {};
+  const scoped = { ...record, checkinPeriod: period };
+  if (period === "am") {
+    scoped.pm = false;
+    scoped.pmLate = false;
+    scoped.status = statusForPeriod(record, member, "am");
+  } else {
+    scoped.am = false;
+    scoped.amLate = false;
+    scoped.status = statusForPeriod(record, member, "pm");
+  }
+  return scoped;
+}
+
+function statusForPeriod(record, member, period) {
+  if (period === "am") {
+    if (record.amLate) return "遲到";
+    if (record.am) return isAdult(member) ? "上午實到" : "出席";
+    return "未到";
+  }
+  if (record.pmLate) return "下午遲到";
+  if (record.pm) return isAdult(member) ? "下午13:00實到" : "出席";
+  return "未到";
 }
 
 function memberById(memberId) {
@@ -496,7 +545,7 @@ function buildOverviewRows() {
       expected: members.length,
       morning: records.filter(hasMorning).length,
       afternoon: records.filter(hasAfternoon).length,
-      late: records.filter((record) => record.status === "遲到").length,
+      late: records.filter((record) => record.status === "遲到" || record.status === "下午遲到" || record.amLate || record.pmLate).length,
       absent: records.filter((record) => record.status === "未到").length,
       familyAlerts: findFamilyAlerts().filter((alert) => alert.group === entry.key && alert.squad === squad).length,
     };
@@ -850,6 +899,7 @@ function renderCheckin() {
     });
     squadTabs.appendChild(button);
   });
+  renderCheckinPeriodTabs();
 
   if (!currentEvent().onsiteOpen) {
     checkinRecorderPanel.innerHTML = "";
@@ -869,6 +919,25 @@ function renderCheckin() {
     return;
   }
   checkinList.replaceChildren(...members.map((member) => renderPersonCard(member, "checkin", { locked: Boolean(submission) })));
+}
+
+function renderCheckinPeriodTabs() {
+  if (!checkinPeriodTabs) return;
+  const periods = [
+    { key: "am", label: "上午點名" },
+    { key: "pm", label: "下午點名" },
+  ];
+  checkinPeriodTabs.replaceChildren(...periods.map((period) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = period.label;
+    button.classList.toggle("is-active", activeCheckinPeriod === period.key);
+    button.addEventListener("click", () => {
+      activeCheckinPeriod = period.key;
+      renderCheckin();
+    });
+    return button;
+  }));
 }
 
 function renderFamilyConfirmPanel(familyId, confirmation) {
@@ -932,19 +1001,20 @@ function renderCheckinRecorderPanel(submission) {
 
 function renderCheckinSubmitPanel(submission) {
   if (activeSquad === "全部") {
-    checkinSubmitPanel.innerHTML = `<div class="confirm-status"><strong>請先選擇單一分隊</strong><span>每個分隊本場只能送出一次。</span></div>`;
+    checkinSubmitPanel.innerHTML = `<div class="confirm-status"><strong>請先選擇單一分隊</strong><span>每個分隊上午、下午各送出一次。</span></div>`;
     return;
   }
+  const periodText = checkinPeriodLabel(activeCheckinPeriod);
   if (submission) {
     checkinSubmitPanel.innerHTML = `
-      <div class="confirm-status"><strong>${activeSquad} 已完成點名</strong><span>填寫人：${escapeHtml(submission.recorder)}｜${formatTime(submission.submittedAt)}｜${syncStatusText(submission)}</span></div>
+      <div class="confirm-status"><strong>${activeSquad} ${periodText}已完成點名</strong><span>填寫人：${escapeHtml(submission.recorder)}｜${formatTime(submission.submittedAt)}｜${syncStatusText(submission)}</span></div>
       <p class="confirm-help">表單填寫如需修改，請洽點名人員孔雀魚。</p>
     `;
     return;
   }
   checkinSubmitPanel.innerHTML = `
-    <p class="required-note">必填：點名人員自然名、此分隊每位成員現場狀態。</p>
-    <button id="submitCheckin" type="button">確認送出本分隊點名</button>
+    <p class="required-note">必填：點名人員自然名、此分隊孩子現場狀態。成人未到可不勾實到。</p>
+    <button id="submitCheckin" type="button">確認送出本分隊${periodText}點名</button>
   `;
   checkinSubmitPanel.querySelector("#submitCheckin").addEventListener("click", async () => {
     const recorder = normalize(checkinRecorderPanel.querySelector("#checkinRecorder")?.value);
@@ -964,6 +1034,7 @@ function renderCheckinSubmitPanel(submission) {
       eventId: currentEvent().id,
       group: activeEntrance,
       squad: activeSquad,
+      period: activeCheckinPeriod,
       syncStatus: "pending",
     };
     delete state.checkinRecorderDrafts[key];
@@ -1023,6 +1094,7 @@ function isFamilyStatusMissing(member) {
 }
 
 function isCheckinStatusMissing(member) {
+  if (isAdult(member)) return false;
   return getRecord(member.id).status === "未確認";
 }
 
@@ -1051,7 +1123,7 @@ function renderPersonCard(member, mode, options = {}) {
   card.querySelector(".person-meta").textContent = `家庭 ${member.familyId}｜${roleText}｜${groupText}｜${squadText}｜${expectedText}${checkinExpectedText}`;
   card.querySelector(".person-name").textContent = member.name;
   const status = card.querySelector(".person-status");
-  status.textContent = mode === "family" ? record.expected : record.status;
+  status.textContent = mode === "family" ? record.expected : displayCheckinStatus(record, member);
   status.dataset.state = status.textContent;
   card.classList.toggle("needs-required", mode === "family" ? isFamilyStatusMissing(member) : isCheckinStatusMissing(member));
 
@@ -1064,7 +1136,7 @@ function renderPersonCard(member, mode, options = {}) {
     button.className = item === "未到" || item === "請假" ? "danger" : "";
     if (mode === "checkin" && isExpectedHint(record, item)) button.classList.add("is-expected");
     button.disabled = locked;
-    button.classList.toggle("is-selected", mode === "family" ? record.expected === item : record.status === item);
+    button.classList.toggle("is-selected", mode === "family" ? record.expected === item : isActionSelected(record, item, member));
     button.addEventListener("click", () => {
       if (locked) return;
       if (mode === "family") {
@@ -1080,7 +1152,7 @@ function renderPersonCard(member, mode, options = {}) {
   });
 
   const adultRow = card.querySelector(".adult-row");
-  adultRow.hidden = mode === "family" || !isAdult(member);
+  adultRow.hidden = true;
   const amCheck = card.querySelector(".am-check");
   const pmCheck = card.querySelector(".pm-check");
   amCheck.checked = record.am;
@@ -1160,37 +1232,75 @@ function renderAnnual() {
 function updatePeriod(member, period, checked) {
   const record = getRecord(member.id);
   record[period] = checked;
-  if (record.am && record.pm) record.status = isAdult(member) ? "全天出席" : "出席";
-  if (record.am && !record.pm) record.status = "下午請假";
-  if (!record.am && record.pm) record.status = "上午請假";
-  if (!record.am && !record.pm && record.status !== "請假") record.status = "未到";
+  if (period === "am" && !checked) record.amLate = false;
+  if (period === "pm" && !checked) record.pmLate = false;
+  record.status = deriveCheckinStatus(record, member);
   saveState();
   render();
 }
 
 function applyAttendanceStatus(record, status, member) {
+  if (isAdult(member) && ADULT_CHECKIN_STATUSES.includes(status)) {
+    applyAdultAttendanceStatus(record, status);
+    record.status = deriveCheckinStatus(record, member);
+    return;
+  }
   if (status === "出席" || status === "全天出席" || status === "遲到") {
     record.status = isAdult(member) ? "全天出席" : status === "全天出席" ? "出席" : status;
     record.am = true;
     record.pm = true;
+    record.amLate = status === "遲到";
+    record.pmLate = false;
     return;
   }
   if (isAfternoonLeave(status)) {
     record.status = "下午請假";
     record.am = true;
     record.pm = false;
+    record.amLate = false;
+    record.pmLate = false;
     return;
   }
   if (isMorningLeave(status)) {
     record.status = "上午請假";
     record.am = false;
     record.pm = true;
+    record.amLate = false;
+    record.pmLate = false;
     return;
   }
   if (status === "請假" || status === "未到") {
     record.status = "未到";
     record.am = false;
     record.pm = false;
+    record.amLate = false;
+    record.pmLate = false;
+  }
+}
+
+function applyAdultAttendanceStatus(record, status) {
+  if (status === "上午實到") {
+    const selected = record.am && !record.amLate;
+    record.am = !selected;
+    record.amLate = false;
+    return;
+  }
+  if (status === "遲到") {
+    const selected = record.am && record.amLate;
+    record.am = !selected;
+    record.amLate = !selected;
+    return;
+  }
+  if (status === "下午13:00實到") {
+    const selected = record.pm && !record.pmLate;
+    record.pm = !selected;
+    record.pmLate = false;
+    return;
+  }
+  if (status === "下午遲到") {
+    const selected = record.pm && record.pmLate;
+    record.pm = !selected;
+    record.pmLate = !selected;
   }
 }
 
@@ -1257,6 +1367,8 @@ function clearCheckinStatus(record) {
   record.status = "未確認";
   record.am = false;
   record.pm = false;
+  record.amLate = false;
+  record.pmLate = false;
 }
 
 function recordWeight(status) {
@@ -1361,6 +1473,8 @@ function getRecord(memberId, eventId = currentEvent().id) {
       expected: "未確認",
       am: false,
       pm: false,
+      amLate: false,
+      pmLate: false,
       route: "",
       work: "",
       workGroup: "",
@@ -1384,11 +1498,11 @@ function familyConfirmation(familyId) {
 }
 
 function checkinSubmissionKey() {
-  return checkinSubmissionKeyFor(currentEvent().id, activeEntrance, activeSquad);
+  return checkinSubmissionKeyFor(currentEvent().id, activeEntrance, activeSquad, activeCheckinPeriod);
 }
 
-function checkinSubmissionKeyFor(eventId, group, squad) {
-  return `${eventId}|checkin|${group}|${squad}`;
+function checkinSubmissionKeyFor(eventId, group, squad, period = activeCheckinPeriod) {
+  return `${eventId}|checkin|${group}|${squad}|${period || "am"}`;
 }
 
 function checkinSubmission() {
@@ -1603,7 +1717,10 @@ function hasAfternoon(record) {
 
 function attendancePeriods(record) {
   const status = normalizePartialLeaveStatus(record.status);
+  if (record.am || record.pm || record.amLate || record.pmLate) return { am: Boolean(record.am), pm: Boolean(record.pm) };
   if (["出席", "全天出席", "遲到"].includes(status)) return { am: true, pm: true };
+  if (status === "上午實到") return { am: true, pm: false };
+  if (status === "下午13:00實到" || status === "下午遲到") return { am: false, pm: true };
   if (isAfternoonLeave(status)) return { am: true, pm: false };
   if (isMorningLeave(status)) return { am: false, pm: true };
   if (!status || ["未確認", "未到", "請假"].includes(status)) return { am: false, pm: false };
@@ -1612,10 +1729,60 @@ function attendancePeriods(record) {
 
 function syncRecordPeriodFlags(record) {
   const periods = attendancePeriods(record);
-  if (record.am === periods.am && record.pm === periods.pm) return false;
+  let changed = false;
+  if (!Object.prototype.hasOwnProperty.call(record, "amLate")) {
+    record.amLate = record.status === "遲到";
+    changed = true;
+  }
+  if (!Object.prototype.hasOwnProperty.call(record, "pmLate")) {
+    record.pmLate = record.status === "下午遲到";
+    changed = true;
+  }
+  if (record.am === periods.am && record.pm === periods.pm) return changed;
   record.am = periods.am;
   record.pm = periods.pm;
   return true;
+}
+
+function deriveCheckinStatus(record, member) {
+  if (isAdult(member)) {
+    if (record.am && record.pm) {
+      if (record.amLate && record.pmLate) return "上午遲到/下午遲到";
+      if (record.amLate) return "上午遲到/下午實到";
+      if (record.pmLate) return "上午實到/下午遲到";
+      return "全天出席";
+    }
+    if (record.am) return record.amLate ? "遲到" : "上午實到";
+    if (record.pm) return record.pmLate ? "下午遲到" : "下午13:00實到";
+    return "未確認";
+  }
+  if (record.am && record.pm) return record.amLate ? "遲到" : "出席";
+  if (record.am && !record.pm) return "下午請假";
+  if (!record.am && record.pm) return "上午請假";
+  return "未到";
+}
+
+function displayCheckinStatus(record, member) {
+  if (isAdult(member)) return deriveCheckinStatus(record, member);
+  return record.status;
+}
+
+function isActionSelected(record, action, member) {
+  if (!isAdult(member) || !ADULT_CHECKIN_STATUSES.includes(action)) return record.status === action;
+  if (action === "上午實到") return Boolean(record.am && !record.amLate);
+  if (action === "遲到") return Boolean(record.am && record.amLate);
+  if (action === "下午13:00實到") return Boolean(record.pm && !record.pmLate);
+  if (action === "下午遲到") return Boolean(record.pm && record.pmLate);
+  return false;
+}
+
+function checkinPeriodLabel(period) {
+  return period === "pm" ? "下午" : "上午";
+}
+
+function periodKeyFromLabel(label) {
+  if (label === "下午" || label === "pm") return "pm";
+  return "am";
 }
 
 function isMorningLeave(status) {
@@ -1659,7 +1826,7 @@ function entranceLabel(key) {
 }
 
 function checkinActions(member) {
-  if (isAdult(member) && currentEvent().eagleSplit && member.eagleQualified) return ADULT_CHECKIN_STATUSES;
+  if (isAdult(member)) return ADULT_CHECKIN_STATUSES;
   return CHILD_STATUSES;
 }
 

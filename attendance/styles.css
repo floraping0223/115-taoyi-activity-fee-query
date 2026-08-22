@@ -595,6 +595,25 @@ label span {
   margin-bottom: 12px;
 }
 
+.period-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.period-tabs button {
+  flex: 1 1 160px;
+  min-height: 44px;
+  color: var(--ink);
+  background: #eef3f8;
+}
+
+.period-tabs button.is-active {
+  color: #fff;
+  background: var(--blue);
+}
+
 .confirm-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -738,12 +757,18 @@ label span {
 }
 
 .person-status[data-state="出席"],
-.person-status[data-state="全天出席"] {
+.person-status[data-state="全天出席"],
+.person-status[data-state="上午實到"],
+.person-status[data-state="下午13:00實到"] {
   color: var(--green);
   background: var(--soft-green);
 }
 
 .person-status[data-state="遲到"],
+.person-status[data-state="下午遲到"],
+.person-status[data-state="上午遲到/下午遲到"],
+.person-status[data-state="上午遲到/下午實到"],
+.person-status[data-state="上午實到/下午遲到"],
 .person-status[data-state="上午出席"],
 .person-status[data-state="下午出席"] {
   color: var(--amber);
