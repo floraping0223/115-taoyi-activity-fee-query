@@ -23,7 +23,7 @@ const ENTRANCES = [
 
 const CHILD_STATUSES = ["出席", "遲到", "上午請假", "下午請假", "未到"];
 const ADULT_CHECKIN_STATUSES = ["上午實到", "遲到", "下午13:00實到", "下午遲到"];
-const FAMILY_STATUSES = ["全天出席", "上午請假", "下午請假", "請假"];
+const FAMILY_STATUSES = ["全天出席", "上午請假", "下午請假", "請假", "公假"];
 const EAGLE_SOLO_ROUTE = "老鷹單飛活動";
 const ADULT_ROUTES = ["母團活動", EAGLE_SOLO_ROUTE];
 const SPLIT_CHECKIN_ROUTES = [EAGLE_SOLO_ROUTE];
@@ -43,6 +43,7 @@ const DEFAULT_RULES = {
   "下午出席": 0.5,
   "未到": 1,
   "請假": 1,
+  "公假": 0,
 };
 
 const state = loadState();
@@ -1141,7 +1142,7 @@ function checkinSummaryFor(entranceKey, squad) {
     return !hasAfternoon(record);
   });
   const leaves = checkinLeaveMembersFor(entranceKey, squad);
-  const fullLeave = leaves.filter((member) => normalizePartialLeaveStatus(getRecord(member.id).expected) === "請假");
+  const fullLeave = leaves.filter((member) => ["請假", "公假"].includes(normalizePartialLeaveStatus(getRecord(member.id).expected)));
   const morningLeave = leaves.filter((member) => isMorningLeave(getRecord(member.id).expected));
   const afternoonLeave = leaves.filter((member) => isAfternoonLeave(getRecord(member.id).expected));
   return {
@@ -1167,7 +1168,7 @@ function checkinLeaveMembersFor(entranceKey, squad) {
   return state.members
     .filter((member) => {
       const expected = normalizePartialLeaveStatus(getRecord(member.id).expected);
-      return ["請假", "上午請假", "下午請假"].includes(expected);
+      return ["請假", "上午請假", "下午請假", "公假"].includes(expected);
     })
     .filter((member) => resolveCheckinGroup(member) === entranceKey)
     .filter((member) => squad === "全部" || resolveCheckinSquad(member) === squad)
@@ -1230,7 +1231,7 @@ function isCheckinStatusMissing(member) {
 
 function isRouteMissing(member) {
   const record = getRecord(member.id);
-  return currentEvent().eagleSplit && isAdult(member) && member.eagleQualified && record.expected !== "請假" && !record.route;
+  return currentEvent().eagleSplit && isAdult(member) && member.eagleQualified && !["請假", "公假"].includes(record.expected) && !record.route;
 }
 
 function isExpectedHint(record, action) {
@@ -1271,7 +1272,7 @@ function renderPersonCard(member, mode, options = {}) {
       if (locked) return;
       if (mode === "family") {
         record.expected = item;
-        if (item === "請假") record.route = "";
+        if (item === "請假" || item === "公假") record.route = "";
       } else {
         applyAttendanceStatus(record, item, member);
       }
@@ -1293,7 +1294,7 @@ function renderPersonCard(member, mode, options = {}) {
   pmCheck.addEventListener("change", () => updatePeriod(member, "pm", pmCheck.checked));
 
   const splitRow = card.querySelector(".split-row");
-  const needsRoute = currentEvent().eagleSplit && isAdult(member) && member.eagleQualified && record.expected !== "請假";
+  const needsRoute = currentEvent().eagleSplit && isAdult(member) && member.eagleQualified && !["請假", "公假"].includes(record.expected);
   splitRow.hidden = !needsRoute;
   if (needsRoute) {
     const title = document.createElement("div");
@@ -1516,7 +1517,7 @@ function updateAnnualCounts(counts, status) {
 function annualStatus(record) {
   if (record.status && record.status !== "未確認") return normalizePartialLeaveStatus(record.status);
   const expected = normalizePartialLeaveStatus(record.expected);
-  if (["請假", "上午請假", "下午請假"].includes(expected)) return expected;
+  if (["請假", "上午請假", "下午請假", "公假"].includes(expected)) return expected;
   return "未確認";
 }
 
@@ -1529,8 +1530,8 @@ function findFamilyAlerts() {
     members.filter(isChild).forEach((child) => {
       const record = getRecord(child.id);
       [
-        ["上午", hasMorning(record), adults.some((adult) => isAccompanyingAdultPresent(adult, "am", familySubmitted))],
-        ["下午", hasAfternoon(record), adults.some((adult) => isAccompanyingAdultPresent(adult, "pm", familySubmitted))],
+        ["上午", hasMorning(record), familyHasPublicLeaveAdult(adults) || adults.some((adult) => isAccompanyingAdultPresent(adult, "am", familySubmitted))],
+        ["下午", hasAfternoon(record), familyHasPublicLeaveAdult(adults) || adults.some((adult) => isAccompanyingAdultPresent(adult, "pm", familySubmitted))],
       ].forEach(([period, childPresent, adultPresent]) => {
         if (childPresent && !adultPresent) {
           alerts.push({ familyId, period, name: child.name, group: child.group, squad: child.squad });
@@ -1543,17 +1544,21 @@ function findFamilyAlerts() {
 
 function isAccompanyingAdultPresent(adult, period, familySubmitted = false) {
   const record = getRecord(adult.id);
-  if (record.expected === "請假") return false;
+  if (record.expected === "請假" || record.expected === "公假") return false;
   if (familySubmitted && record.expected === "未確認") return false;
   if (record.status === "未確認") return false;
   return period === "am" ? hasMorning(record) : hasAfternoon(record);
+}
+
+function familyHasPublicLeaveAdult(adults) {
+  return adults.some((adult) => getRecord(adult.id).expected === "公假");
 }
 
 function expectedMembers(options = {}) {
   return state.members.filter((member) => {
     const record = getRecord(member.id);
     if (!options.includeUnconfirmed && !member.isGuest && record.expected === "未確認") return false;
-    if (record.expected === "請假") return false;
+    if (record.expected === "請假" || record.expected === "公假") return false;
     if (!currentEvent().eagleSplit || !member.eagleQualified || !isAdult(member) || member.group !== "育成會") return true;
     return true;
   });

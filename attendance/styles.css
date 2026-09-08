@@ -124,6 +124,13 @@ p {
   padding: 18px;
 }
 
+.header-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .eyebrow {
   margin-bottom: 4px;
   color: var(--teal);
@@ -889,6 +896,11 @@ label span {
 .person-status[data-state="請假"] {
   color: var(--red);
   background: var(--soft-red);
+}
+
+.person-status[data-state="公假"] {
+  color: var(--blue);
+  background: #eaf3ff;
 }
 
 .adult-row,

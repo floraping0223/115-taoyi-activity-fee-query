@@ -306,7 +306,7 @@ function refreshDailyOverview_(eventId) {
       const scopedMembers = members.filter(member => {
         const record = overviewRecord_(recordsByMemberId, member, targetEventId);
         if (record.expected === "未確認" && !isGuestMember_(member)) return false;
-        if (record.expected === "請假") return false;
+        if (record.expected === "請假" || record.expected === "公假") return false;
         return resolveCheckinGroup_(member, record, events) === entry.key
           && resolveCheckinSquad_(member, record, events) === squad;
       });
@@ -431,7 +431,8 @@ function countFamilyAlerts_(members, recordsByMemberId, familySubmitted, eventId
         { period: "am", present: hasMorning_(childRecord) },
         { period: "pm", present: hasAfternoon_(childRecord) },
       ].forEach(item => {
-        const adultPresent = adults.some(adult => isAccompanyingAdultPresent_(adult, item.period, Boolean(familySubmitted[familyId]), recordsByMemberId, eventId));
+        const adultPresent = familyHasPublicLeaveAdult_(adults, recordsByMemberId, eventId)
+          || adults.some(adult => isAccompanyingAdultPresent_(adult, item.period, Boolean(familySubmitted[familyId]), recordsByMemberId, eventId));
         if (item.present && !adultPresent) count += 1;
       });
     });
@@ -441,10 +442,14 @@ function countFamilyAlerts_(members, recordsByMemberId, familySubmitted, eventId
 
 function isAccompanyingAdultPresent_(adult, period, familySubmitted, recordsByMemberId, eventId) {
   const record = overviewRecord_(recordsByMemberId, adult, eventId);
-  if (record.expected === "請假") return false;
+  if (record.expected === "請假" || record.expected === "公假") return false;
   if (familySubmitted && record.expected === "未確認") return false;
   if (!record.status || record.status === "未確認") return false;
   return period === "am" ? hasMorning_(record) : hasAfternoon_(record);
+}
+
+function familyHasPublicLeaveAdult_(adults, recordsByMemberId, eventId) {
+  return adults.some(adult => overviewRecord_(recordsByMemberId, adult, eventId).expected === "公假");
 }
 
 function hasMorning_(record) {
