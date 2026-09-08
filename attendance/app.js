@@ -584,7 +584,7 @@ function buildOverviewRows() {
 
 function buildAnnualRows() {
   return state.members.filter(isAnnualChild).map((member) => {
-    const counts = { normal: 0, late: 0, morning: 0, afternoon: 0, absent: 0 };
+    const counts = { normal: 0, late: 0, morning: 0, afternoon: 0, absent: 0, publicLeave: 0 };
     let total = 0;
     const eventValues = state.events.map((event) => {
       const record = getRecord(member.id, event.id);
@@ -1343,7 +1343,7 @@ function renderAnnual() {
   }
   annualList.innerHTML = children.map((member) => {
     let total = 0;
-    const counts = { normal: 0, late: 0, morning: 0, afternoon: 0, absent: 0 };
+    const counts = { normal: 0, late: 0, morning: 0, afternoon: 0, absent: 0, publicLeave: 0 };
     const cells = state.events.map((event) => {
       const record = getRecord(member.id, event.id);
       const status = annualStatus(record);
@@ -1351,12 +1351,12 @@ function renderAnnual() {
       total += weight;
       updateAnnualCounts(counts, status);
       const cls = weight === 0 ? "ok" : weight < 1 ? "warn" : "bad";
-      const text = status === "未確認" ? "-" : String(weight);
+      const text = status === "未確認" ? "-" : status === "公假" ? "公" : String(weight);
       return `<span class="annual-cell ${cls}">${text}</span>`;
     }).join("");
     const completed = state.events.filter((event) => annualStatus(getRecord(member.id, event.id)) !== "未確認").length;
     const attendanceRate = completed ? Math.round(((completed - total) / completed) * 100) : 0;
-    return `<article class="annual-row"><strong>家庭 ${member.familyId}</strong><span>${member.name}｜${member.group}｜${member.squad}</span>${cells}<span class="annual-total">缺席 ${total}<br><span class="annual-detail">正常 ${counts.normal}｜遲到 ${counts.late}｜上午 ${counts.morning}｜下午 ${counts.afternoon}｜缺席 ${counts.absent}｜出席率 ${attendanceRate}%</span></span></article>`;
+    return `<article class="annual-row"><strong>家庭 ${member.familyId}</strong><span>${member.name}｜${member.group}｜${member.squad}</span>${cells}<span class="annual-total">缺席 ${total}<br><span class="annual-detail">正常 ${counts.normal}｜遲到 ${counts.late}｜上午 ${counts.morning}｜下午 ${counts.afternoon}｜缺席 ${counts.absent}｜公假 ${counts.publicLeave}｜出席率 ${attendanceRate}%</span></span></article>`;
   }).join("");
 }
 
@@ -1436,17 +1436,18 @@ function applyAdultAttendanceStatus(record, status) {
 }
 
 function shouldRepairExpectedAttendance(record) {
-  if (!["全天出席", "上午請假", "下午請假", "上午出席", "下午出席", "請假"].includes(record.expected)) return false;
+  if (!["全天出席", "上午請假", "下午請假", "上午出席", "下午出席", "請假", "公假"].includes(record.expected)) return false;
   if (record.status === "未確認" || !record.status) return true;
   if (record.expected === "全天出席") return !record.am || !record.pm;
   if (isAfternoonLeave(record.expected)) return !record.am || record.pm;
   if (isMorningLeave(record.expected)) return record.am || !record.pm;
   if (record.expected === "請假") return record.am || record.pm || record.status !== "未到";
+  if (record.expected === "公假") return record.am || record.pm || record.status !== "未到";
   return false;
 }
 
 function shouldClearExpectedOnlyCheckin(saved, member, record) {
-  if (!["全天出席", "上午請假", "下午請假", "上午出席", "下午出席", "請假"].includes(record.expected)) return false;
+  if (!["全天出席", "上午請假", "下午請假", "上午出席", "下午出席", "請假", "公假"].includes(record.expected)) return false;
   if (record.status === "未確認") return false;
   const eventId = record.eventId || currentEvent().id;
   if (hasSubmittedCheckin(saved, eventId, member, record)) return false;
@@ -1454,6 +1455,7 @@ function shouldClearExpectedOnlyCheckin(saved, member, record) {
   if (isAfternoonLeave(record.expected)) return record.am && !record.pm && isAfternoonLeave(record.status);
   if (isMorningLeave(record.expected)) return !record.am && record.pm && isMorningLeave(record.status);
   if (record.expected === "請假") return !record.am && !record.pm && record.status === "未到";
+  if (record.expected === "公假") return !record.am && !record.pm && record.status === "未到";
   return false;
 }
 
@@ -1512,6 +1514,7 @@ function updateAnnualCounts(counts, status) {
   if (isAfternoonLeave(status)) counts.morning += 1;
   if (isMorningLeave(status)) counts.afternoon += 1;
   if (status === "未到" || status === "請假") counts.absent += 1;
+  if (status === "公假") counts.publicLeave += 1;
 }
 
 function annualStatus(record) {
@@ -1689,7 +1692,7 @@ function migrateState(saved) {
     if (record.expected === "出席") record.expected = "全天出席";
     record.expected = normalizePartialLeaveStatus(record.expected);
     record.status = normalizePartialLeaveStatus(record.status);
-    if (record.expected === "請假" && record.route) {
+    if ((record.expected === "請假" || record.expected === "公假") && record.route) {
       record.route = "";
       recordsRepaired = true;
     }

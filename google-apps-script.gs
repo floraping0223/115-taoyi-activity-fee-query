@@ -22,7 +22,7 @@ const HEADERS = {
   [SHEETS.work]: ["場次", "人員ID", "家庭編號", "自然名", "主要點名群組", "小隊", "預計時段", "支援團隊", "職務註記", "工作分配", "備註"],
   [SHEETS.rules]: ["狀態", "缺席權重", "適用對象", "備註"],
   [SHEETS.overview]: ["場次", "群組", "小隊", "預計出席", "上午實到", "下午實到", "遲到", "未到", "親子陪同異常"],
-  [SHEETS.annual]: ["人員ID", "家庭編號", "自然名", "分團", "小隊", "場次01", "場次02", "場次03", "場次04", "場次05", "場次06", "場次07", "場次08", "場次09", "場次10", "場次11", "場次12", "正常", "遲到", "上午", "下午", "全天缺席", "累計缺席", "出席率"],
+  [SHEETS.annual]: ["人員ID", "家庭編號", "自然名", "分團", "小隊", "場次01", "場次02", "場次03", "場次04", "場次05", "場次06", "場次07", "場次08", "場次09", "場次10", "場次11", "場次12", "正常", "遲到", "上午", "下午", "全天缺席", "公假", "累計缺席", "出席率"],
   [SHEETS.check]: ["檢查時間", "資料表", "檢查項目", "結果", "說明"],
   [SHEETS.mapping]: ["原始Excel欄位", "系統欄位", "處理方式", "備註"],
   [SHEETS.missing]: ["資料類型", "家庭編號", "自然名", "缺少欄位", "影響", "處理狀態"],
@@ -156,7 +156,7 @@ function writeSnapshot_(payload) {
     writeSheet_(SHEETS.annual, (payload.annual || []).map(row => [
       row.personId, row.familyId, row.name, row.group, row.squad,
       ...(row.events || Array(12).fill("")).slice(0, 12),
-      row.normal, row.late, row.morning, row.afternoon, row.absent, row.totalAbsence, row.attendanceRate,
+      row.normal, row.late, row.morning, row.afternoon, row.absent, row.publicLeave || 0, row.totalAbsence, row.attendanceRate,
     ]));
   }
 
