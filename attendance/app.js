@@ -499,8 +499,11 @@ async function syncToGoogle(options = {}) {
     });
     markSubmissionsSynced(intent);
     const loaded = await loadBackendSnapshotFromGoogle({ preserveLocalPending: true });
-    if (!silent) syncGoogle.textContent = loaded ? "已同步" : "已送出";
-    return loaded;
+    const confirmed = options.confirmationKey
+      ? await waitForBackendConfirmation(intent, options.confirmationKey, loaded)
+      : loaded;
+    if (!silent) syncGoogle.textContent = confirmed ? "已同步" : "已送出";
+    return confirmed;
   } catch (error) {
     if (!silent) syncGoogle.textContent = "同步失敗";
     return false;
@@ -512,6 +515,32 @@ async function syncToGoogle(options = {}) {
       }, 1800);
     }
   }
+}
+
+async function waitForBackendConfirmation(intent, key, alreadyLoaded = false) {
+  if (alreadyLoaded && isBackendConfirmed(intent, key)) return true;
+  for (let index = 0; index < 5; index += 1) {
+    await sleep(index === 0 ? 1200 : 2500);
+    const loaded = await loadBackendSnapshotFromGoogle({ preserveLocalPending: true });
+    if (loaded && isBackendConfirmed(intent, key)) return true;
+  }
+  return false;
+}
+
+function isBackendConfirmed(intent, key) {
+  if (intent === "family") {
+    const item = state.familyConfirmations?.[key];
+    return Boolean(item?.syncStatus === "sent" && item.backendConfirmed);
+  }
+  if (intent === "checkin") {
+    const item = state.checkinSubmissions?.[key];
+    return Boolean(item?.syncStatus === "sent" && item.backendConfirmed);
+  }
+  return false;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function refreshBackendReplies() {
@@ -1071,9 +1100,11 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
     }
     const key = familyConfirmKey(familyId);
     state.familyConfirmations[key] = { submittedAt: new Date().toISOString(), syncStatus: "pending" };
+    const button = familyConfirmPanel.querySelector("#confirmFamily");
+    button.disabled = true;
+    button.textContent = "送出中，請稍候";
     saveState();
-    renderFamily();
-    const synced = await syncToGoogle({ silent: true, intent: "family" });
+    const synced = await syncToGoogle({ silent: true, intent: "family", confirmationKey: key });
     if (state.familyConfirmations[key] && state.familyConfirmations[key].syncStatus !== "sent") {
       state.familyConfirmations[key].syncStatus = synced ? "pending" : "failed";
       state.familyConfirmations[key].syncedAt = synced ? state.familyConfirmations[key].syncedAt || new Date().toISOString() : "";
@@ -1132,8 +1163,8 @@ function renderCheckinSubmitPanel(submission) {
       retryButton.addEventListener("click", async () => {
         retryButton.disabled = true;
         retryButton.textContent = "重送中";
-        const synced = await syncToGoogle({ silent: true, intent: "checkin" });
         const key = checkinSubmissionKey();
+        const synced = await syncToGoogle({ silent: true, intent: "checkin", confirmationKey: key });
         if (state.checkinSubmissions[key] && state.checkinSubmissions[key].syncStatus !== "sent") {
           state.checkinSubmissions[key].syncStatus = synced ? "pending" : "failed";
           state.checkinSubmissions[key].syncedAt = synced ? state.checkinSubmissions[key].syncedAt || new Date().toISOString() : "";
@@ -1160,6 +1191,9 @@ function renderCheckinSubmitPanel(submission) {
       return;
     }
     const key = checkinSubmissionKey();
+    const button = checkinSubmitPanel.querySelector("#submitCheckin");
+    button.disabled = true;
+    button.textContent = "送出中，請稍候";
     state.checkinSubmissions[key] = {
       recorder,
       submittedAt: new Date().toISOString(),
@@ -1171,8 +1205,7 @@ function renderCheckinSubmitPanel(submission) {
     };
     delete state.checkinRecorderDrafts[key];
     saveState();
-    render();
-    const synced = await syncToGoogle({ silent: true, intent: "checkin" });
+    const synced = await syncToGoogle({ silent: true, intent: "checkin", confirmationKey: key });
     if (state.checkinSubmissions[key] && state.checkinSubmissions[key].syncStatus !== "sent") {
       state.checkinSubmissions[key].syncStatus = synced ? "pending" : "failed";
       state.checkinSubmissions[key].syncedAt = synced ? state.checkinSubmissions[key].syncedAt || new Date().toISOString() : "";
