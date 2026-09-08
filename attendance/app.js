@@ -1006,10 +1006,27 @@ function renderCheckinSubmitPanel(submission) {
   }
   const periodText = checkinPeriodLabel(activeCheckinPeriod);
   if (submission) {
+    const needsRetry = submission.syncStatus !== "sent";
     checkinSubmitPanel.innerHTML = `
       <div class="confirm-status"><strong>${activeSquad} ${periodText}已完成點名</strong><span>填寫人：${escapeHtml(submission.recorder)}｜${formatTime(submission.submittedAt)}｜${syncStatusText(submission)}</span></div>
-      <p class="confirm-help">表單填寫如需修改，請洽點名人員孔雀魚。</p>
+      <p class="confirm-help">${needsRetry ? "後端尚未確認收到，請在原本這台裝置按重新送後端。" : "表單填寫如需修改，請洽點名人員孔雀魚。"}</p>
+      ${needsRetry ? '<button id="retryCheckinSync" type="button">重新送後端</button>' : ""}
     `;
+    const retryButton = checkinSubmitPanel.querySelector("#retryCheckinSync");
+    if (retryButton) {
+      retryButton.addEventListener("click", async () => {
+        retryButton.disabled = true;
+        retryButton.textContent = "重送中";
+        const synced = await syncToGoogle({ silent: true, intent: "checkin" });
+        const key = checkinSubmissionKey();
+        if (state.checkinSubmissions[key]) {
+          state.checkinSubmissions[key].syncStatus = synced ? "sent" : "failed";
+          state.checkinSubmissions[key].syncedAt = synced ? new Date().toISOString() : "";
+        }
+        saveState();
+        render();
+      });
+    }
     return;
   }
   checkinSubmitPanel.innerHTML = `
@@ -1918,7 +1935,7 @@ function formatTime(value) {
 function syncStatusText(item) {
   if (!normalize(scriptUrl.value)) return "尚未送後端：未設定 Apps Script URL";
   if (item?.syncStatus === "sent") return "已送後端";
-  if (item?.syncStatus === "pending") return "同步後端中";
+  if (item?.syncStatus === "pending") return "尚未確認送達";
   if (item?.syncStatus === "failed") return "尚未送後端：請重新送出或洽點名人員";
   return "尚未送後端";
 }
