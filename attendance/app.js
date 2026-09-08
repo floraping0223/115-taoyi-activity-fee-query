@@ -51,6 +51,7 @@ let activeView = APP_MODE === "family" ? "family" : APP_MODE === "checkin" ? "ch
 let activeEntrance = "小蟻";
 let activeSquad = "全部";
 let activeCheckinPeriod = "am";
+let backendSnapshotLoaded = false;
 
 const eventSelect = document.querySelector("#eventSelect");
 const publicEventSelect = document.querySelector("#publicEventSelect");
@@ -267,7 +268,7 @@ function syncPublicEventSelector() {
   }
 }
 
-function loadBackendSnapshotFromGoogle() {
+function loadBackendSnapshotFromGoogle(options = {}) {
   const url = normalize(DEFAULT_SCRIPT_URL || scriptUrl.value);
   if (!url) return Promise.resolve(false);
   const callbackName = `taoyiSnapshot${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -283,7 +284,9 @@ function loadBackendSnapshotFromGoogle() {
     }, 30000);
     window[callbackName] = (payload) => {
       clearTimeout(timer);
-      const changed = mergeBackendSnapshot(payload);
+      const isOk = Boolean(payload?.ok);
+      if (isOk) backendSnapshotLoaded = true;
+      const changed = mergeBackendSnapshot(payload, options);
       if (changed) {
         syncEventOptions();
         eventSelect.value = state.currentEventId;
@@ -293,7 +296,7 @@ function loadBackendSnapshotFromGoogle() {
         render();
       }
       cleanup();
-      resolve(Boolean(payload?.ok));
+      resolve(isOk);
     };
     try {
       const endpoint = new URL(url);
@@ -314,8 +317,8 @@ function loadBackendSnapshotFromGoogle() {
   });
 }
 
-function mergeBackendSnapshot(payload) {
-  if (!payload) return false;
+function mergeBackendSnapshot(payload, options = {}) {
+  if (!payload?.ok) return false;
   let changed = false;
 
   if (Array.isArray(payload.events)) {
@@ -337,6 +340,13 @@ function mergeBackendSnapshot(payload) {
     changed = true;
   }
 
+  const snapshotEventId = normalize(payload.currentEventId || state.currentEventId);
+  if (!options.preserveLocalPending && snapshotEventId) {
+    if (resetFamilyReplyRecords(snapshotEventId)) changed = true;
+    if (resetCheckinReplyRecords(snapshotEventId)) changed = true;
+  }
+
+  const backendFamilyKeys = new Set();
   (payload.familyReplies || []).forEach((reply) => {
     const member = state.members.find((item) => item.id === reply.memberId);
     if (!member) return;
@@ -345,11 +355,13 @@ function mergeBackendSnapshot(payload) {
     if (mergeRecordField(record, "route", reply.route || "")) changed = true;
     if (mergeRecordField(record, "note", reply.note || "")) changed = true;
     const key = familyConfirmKeyFor(reply.eventId, reply.familyId || member.familyId);
+    backendFamilyKeys.add(key);
     const confirmation = state.familyConfirmations[key] || {};
     const nextConfirmation = {
       submittedAt: reply.submittedAt || confirmation.submittedAt || "",
       syncStatus: "sent",
       syncedAt: reply.syncedAt || confirmation.syncedAt || reply.submittedAt || "",
+      backendConfirmed: true,
     };
     if (JSON.stringify(confirmation) !== JSON.stringify(nextConfirmation)) {
       state.familyConfirmations[key] = nextConfirmation;
@@ -357,6 +369,7 @@ function mergeBackendSnapshot(payload) {
     }
   });
 
+  const backendCheckinKeys = new Set();
   (payload.checkinReplies || []).forEach((reply) => {
     const member = state.members.find((item) => item.id === reply.memberId);
     if (!member) return;
@@ -380,6 +393,7 @@ function mergeBackendSnapshot(payload) {
     }
     if (mergeRecordField(record, "note", reply.note || record.note || "")) changed = true;
     const key = checkinSubmissionKeyFor(reply.eventId, reply.group, reply.squad, periodKeyFromLabel(reply.period));
+    backendCheckinKeys.add(key);
     const submission = state.checkinSubmissions[key] || {};
     const nextSubmission = {
       recorder: reply.recorder || submission.recorder || "",
@@ -390,6 +404,7 @@ function mergeBackendSnapshot(payload) {
       period: periodKeyFromLabel(reply.period),
       syncStatus: "sent",
       syncedAt: reply.syncedAt || submission.syncedAt || reply.submittedAt || "",
+      backendConfirmed: true,
     };
     if (JSON.stringify(submission) !== JSON.stringify(nextSubmission)) {
       state.checkinSubmissions[key] = nextSubmission;
@@ -397,6 +412,61 @@ function mergeBackendSnapshot(payload) {
     }
   });
 
+  if (!options.preserveLocalPending) {
+    if (reconcileConfirmationsWithBackend(snapshotEventId, backendFamilyKeys)) changed = true;
+    if (reconcileCheckinsWithBackend(snapshotEventId, backendCheckinKeys)) changed = true;
+  }
+
+  return changed;
+}
+
+function resetFamilyReplyRecords(eventId) {
+  let changed = false;
+  Object.values(state.records || {}).forEach((record) => {
+    if (record.eventId !== eventId) return;
+    if (mergeRecordField(record, "expected", "未確認")) changed = true;
+    if (mergeRecordField(record, "route", "")) changed = true;
+    if (mergeRecordField(record, "note", "")) changed = true;
+  });
+  return changed;
+}
+
+function resetCheckinReplyRecords(eventId) {
+  let changed = false;
+  Object.values(state.records || {}).forEach((record) => {
+    if (record.eventId !== eventId) return;
+    if (mergeRecordField(record, "status", "未確認")) changed = true;
+    if (mergeRecordField(record, "am", false)) changed = true;
+    if (mergeRecordField(record, "pm", false)) changed = true;
+    if (mergeRecordField(record, "amLate", false)) changed = true;
+    if (mergeRecordField(record, "pmLate", false)) changed = true;
+  });
+  return changed;
+}
+
+function reconcileConfirmationsWithBackend(eventId, backendFamilyKeys) {
+  let changed = false;
+  Object.entries(state.familyConfirmations || {}).forEach(([key, confirmation]) => {
+    const [confirmationEventId] = key.split("|");
+    if (confirmationEventId !== eventId) return;
+    if (confirmation.syncStatus === "sent" && !backendFamilyKeys.has(key)) {
+      delete state.familyConfirmations[key];
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function reconcileCheckinsWithBackend(eventId, backendCheckinKeys) {
+  let changed = false;
+  Object.entries(state.checkinSubmissions || {}).forEach(([key, submission]) => {
+    const [submissionEventId] = key.split("|");
+    if (submissionEventId !== eventId) return;
+    if (submission.syncStatus === "sent" && !backendCheckinKeys.has(key)) {
+      delete state.checkinSubmissions[key];
+      changed = true;
+    }
+  });
   return changed;
 }
 
@@ -428,9 +498,9 @@ async function syncToGoogle(options = {}) {
       body: JSON.stringify(buildSyncPayload(intent)),
     });
     markSubmissionsSynced(intent);
-    const loaded = await loadBackendSnapshotFromGoogle();
+    const loaded = await loadBackendSnapshotFromGoogle({ preserveLocalPending: true });
     if (!silent) syncGoogle.textContent = loaded ? "已同步" : "已送出";
-    return true;
+    return loaded;
   } catch (error) {
     if (!silent) syncGoogle.textContent = "同步失敗";
     return false;
@@ -465,7 +535,7 @@ function markSubmissionsSynced(intent) {
   if (intent === "family") {
     Object.values(state.familyConfirmations || {}).forEach((item) => {
       if (item.syncStatus !== "sent") {
-        item.syncStatus = "sent";
+        item.syncStatus = "pending";
         item.syncedAt = syncedAt;
       }
     });
@@ -473,7 +543,7 @@ function markSubmissionsSynced(intent) {
   if (intent === "checkin") {
     Object.values(state.checkinSubmissions || {}).forEach((item) => {
       if (item.syncStatus !== "sent" && (item.period || "am") === activeCheckinPeriod) {
-        item.syncStatus = "sent";
+        item.syncStatus = "pending";
         item.syncedAt = syncedAt;
       }
     });
@@ -998,8 +1068,10 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
     saveState();
     renderFamily();
     const synced = await syncToGoogle({ silent: true, intent: "family" });
-    state.familyConfirmations[key].syncStatus = synced ? "sent" : "failed";
-    state.familyConfirmations[key].syncedAt = synced ? new Date().toISOString() : "";
+    if (state.familyConfirmations[key] && state.familyConfirmations[key].syncStatus !== "sent") {
+      state.familyConfirmations[key].syncStatus = synced ? "pending" : "failed";
+      state.familyConfirmations[key].syncedAt = synced ? state.familyConfirmations[key].syncedAt || new Date().toISOString() : "";
+    }
     saveState();
     renderFamily();
   });
@@ -1056,9 +1128,9 @@ function renderCheckinSubmitPanel(submission) {
         retryButton.textContent = "重送中";
         const synced = await syncToGoogle({ silent: true, intent: "checkin" });
         const key = checkinSubmissionKey();
-        if (state.checkinSubmissions[key]) {
-          state.checkinSubmissions[key].syncStatus = synced ? "sent" : "failed";
-          state.checkinSubmissions[key].syncedAt = synced ? new Date().toISOString() : "";
+        if (state.checkinSubmissions[key] && state.checkinSubmissions[key].syncStatus !== "sent") {
+          state.checkinSubmissions[key].syncStatus = synced ? "pending" : "failed";
+          state.checkinSubmissions[key].syncedAt = synced ? state.checkinSubmissions[key].syncedAt || new Date().toISOString() : "";
         }
         saveState();
         render();
@@ -1095,8 +1167,10 @@ function renderCheckinSubmitPanel(submission) {
     saveState();
     render();
     const synced = await syncToGoogle({ silent: true, intent: "checkin" });
-    state.checkinSubmissions[key].syncStatus = synced ? "sent" : "failed";
-    state.checkinSubmissions[key].syncedAt = synced ? new Date().toISOString() : "";
+    if (state.checkinSubmissions[key] && state.checkinSubmissions[key].syncStatus !== "sent") {
+      state.checkinSubmissions[key].syncStatus = synced ? "pending" : "failed";
+      state.checkinSubmissions[key].syncedAt = synced ? state.checkinSubmissions[key].syncedAt || new Date().toISOString() : "";
+    }
     saveState();
     render();
   });
@@ -1632,7 +1706,10 @@ function familyConfirmKeyFor(eventId, familyId) {
 }
 
 function familyConfirmation(familyId) {
-  return state.familyConfirmations?.[familyConfirmKey(familyId)] || null;
+  const confirmation = state.familyConfirmations?.[familyConfirmKey(familyId)] || null;
+  if (!confirmation) return null;
+  if (confirmation.syncStatus === "sent" && confirmation.backendConfirmed) return confirmation;
+  return null;
 }
 
 function checkinSubmissionKey() {
@@ -1645,7 +1722,10 @@ function checkinSubmissionKeyFor(eventId, group, squad, period = activeCheckinPe
 
 function checkinSubmission() {
   if (activeSquad === "全部") return null;
-  return state.checkinSubmissions?.[checkinSubmissionKey()] || null;
+  const submission = state.checkinSubmissions?.[checkinSubmissionKey()] || null;
+  if (!submission) return null;
+  if (submission.syncStatus === "sent" && submission.backendConfirmed) return submission;
+  return null;
 }
 
 function loadState() {
