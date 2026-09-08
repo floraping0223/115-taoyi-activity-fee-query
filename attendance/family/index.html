@@ -10,7 +10,7 @@
   <meta property="og:type" content="website">
   <meta name="twitter:title" content="115桃一家庭出席確認表">
   <meta name="twitter:description" content=" ">
-  <link rel="stylesheet" href="../styles.css?v=8">
+  <link rel="stylesheet" href="../styles.css?v=9">
 </head>
 <body data-app-mode="family">
   <main class="app-shell">
@@ -21,6 +21,14 @@
       </div>
       <div class="event-badge" id="openState">第 1 場</div>
     </header>
+
+    <section class="public-event-panel" aria-label="選擇活動場次">
+      <label>
+        <span>活動場次</span>
+        <select id="publicEventSelect"></select>
+      </label>
+      <strong id="publicEventInfo"></strong>
+    </section>
 
     <section class="event-panel" aria-label="活動設定">
       <label>
@@ -195,8 +203,8 @@
     </article>
   </template>
 
-  <script src="../data.js?v=8"></script>
-  <script src="../config.js?v=8"></script>
-  <script src="../app.js?v=8"></script>
+  <script src="../data.js?v=9"></script>
+  <script src="../config.js?v=9"></script>
+  <script src="../app.js?v=9"></script>
 </body>
 </html>

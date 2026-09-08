@@ -52,6 +52,8 @@ let activeSquad = "全部";
 let activeCheckinPeriod = "am";
 
 const eventSelect = document.querySelector("#eventSelect");
+const publicEventSelect = document.querySelector("#publicEventSelect");
+const publicEventInfo = document.querySelector("#publicEventInfo");
 const eventDate = document.querySelector("#eventDate");
 const eventName = document.querySelector("#eventName");
 const eagleSplit = document.querySelector("#eagleSplit");
@@ -110,6 +112,7 @@ function setup() {
 
   syncEventOptions();
   eventSelect.value = state.currentEventId;
+  syncPublicEventSelector();
   scriptUrl.value = DEFAULT_SCRIPT_URL || localStorage.getItem(SCRIPT_URL_KEY) || "";
   syncEventFields();
   loadBackendSnapshotFromGoogle();
@@ -117,9 +120,21 @@ function setup() {
   eventSelect.addEventListener("change", () => {
     state.currentEventId = eventSelect.value;
     syncEventFields();
+    syncPublicEventSelector();
     saveState();
     render();
   });
+
+  if (publicEventSelect) {
+    publicEventSelect.addEventListener("change", () => {
+      state.currentEventId = publicEventSelect.value;
+      eventSelect.value = state.currentEventId;
+      syncEventFields();
+      syncPublicEventSelector();
+      saveState();
+      render();
+    });
+  }
 
   eventDate.addEventListener("change", () => {
     currentEvent().date = eventDate.value;
@@ -236,6 +251,19 @@ function syncEventOptions() {
   eventSelect.innerHTML = state.events.map((event) => (
     `<option value="${event.id}">${event.id}｜${event.name}</option>`
   )).join("");
+  syncPublicEventSelector();
+}
+
+function syncPublicEventSelector() {
+  if (!publicEventSelect) return;
+  publicEventSelect.innerHTML = state.events.map((event) => (
+    `<option value="${event.id}">${event.id}｜${event.name}</option>`
+  )).join("");
+  publicEventSelect.value = state.currentEventId;
+  if (publicEventInfo) {
+    const event = currentEvent();
+    publicEventInfo.textContent = `${event.date || "尚未設定日期"}｜${event.name || "尚未設定活動名稱"}`;
+  }
 }
 
 function loadBackendSnapshotFromGoogle() {
@@ -259,6 +287,7 @@ function loadBackendSnapshotFromGoogle() {
         syncEventOptions();
         eventSelect.value = state.currentEventId;
         syncEventFields();
+        syncPublicEventSelector();
         saveState();
         render();
       }
@@ -581,6 +610,7 @@ function buildAnnualRows() {
 
 function render() {
   openState.textContent = `第 ${currentEvent().id} 場`;
+  syncPublicEventSelector();
   renderFamilyEventSummary();
   renderMetrics();
   renderAlerts();
