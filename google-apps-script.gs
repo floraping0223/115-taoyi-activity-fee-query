@@ -32,6 +32,8 @@ function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
   const callback = e && e.parameter && e.parameter.callback;
   if (action === "events" || action === "snapshot") {
+    setupWorkbook_();
+    refreshDailyOverview_(PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01");
     const payload = readBackendSnapshot_();
     if (callback) return javascript_(callback, payload);
     return json_(payload);
@@ -120,7 +122,19 @@ function writeSnapshot_(payload) {
     ]));
   }
 
-  appendUniqueRows_(SHEETS.work, shouldAppendCheckinReplies ? records.filter(record => {
+  const workRows = records.filter(record => record.work || record.workGroup || record.workRole).map(record => {
+    const member = memberById[record.memberId] || {};
+    const group = resolveCheckinGroup_(member, record, payload.events || []);
+    const squad = resolveCheckinSquad_(member, record, payload.events || []);
+    return [record.eventId, record.memberId, member.familyId || "", member.name || "",
+      group, squad, record.expected || "", record.workGroup || "", record.workRole || "", record.work || "", ""];
+  });
+
+  if (isAdminSync) {
+    writeSheet_(SHEETS.work, workRows);
+  }
+
+  appendUniqueRows_(SHEETS.work, !isAdminSync && shouldAppendCheckinReplies ? records.filter(record => {
     if (!record.work && !record.workGroup && !record.workRole) return false;
     const member = memberById[record.memberId] || {};
     const group = resolveCheckinGroup_(member, record, payload.events || []);
@@ -139,10 +153,6 @@ function writeSnapshot_(payload) {
       status, payload.rules[status], "小孩", "",
     ]));
 
-    writeSheet_(SHEETS.overview, (payload.overview || []).map(row => [
-      row.eventId, row.group, row.squad, row.expected, row.morning, row.afternoon, row.late, row.absent, row.familyAlerts,
-    ]));
-
     writeSheet_(SHEETS.annual, (payload.annual || []).map(row => [
       row.personId, row.familyId, row.name, row.group, row.squad,
       ...(row.events || Array(12).fill("")).slice(0, 12),
@@ -150,6 +160,7 @@ function writeSnapshot_(payload) {
     ]));
   }
 
+  refreshDailyOverview_(payload.currentEventId || "01");
   writeSystemCheck_();
 
   if (isAdminSync) {
@@ -232,6 +243,220 @@ function readCheckinReplies_() {
       period: row[16] || "",
     }))
     .filter(row => row.eventId && row.memberId);
+}
+
+function refreshDailyOverview_(eventId) {
+  const events = readEventSettings_();
+  const targetEventId = String(eventId || PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01").padStart(2, "0");
+  const event = events.filter(item => item.id === targetEventId)[0] || {};
+  const members = readMembers_();
+  const recordsByMemberId = {};
+  const familySubmitted = {};
+
+  readFamilyReplies_()
+    .filter(reply => reply.eventId === targetEventId)
+    .forEach(reply => {
+      recordsByMemberId[reply.memberId] = Object.assign(recordsByMemberId[reply.memberId] || {}, {
+        memberId: reply.memberId,
+        eventId: reply.eventId,
+        expected: reply.expected || "未確認",
+        route: reply.route || "",
+        note: reply.note || "",
+      });
+      familySubmitted[reply.familyId] = true;
+    });
+
+  readWorkAssignments_()
+    .filter(work => work.eventId === targetEventId)
+    .forEach(work => {
+      recordsByMemberId[work.memberId] = Object.assign(recordsByMemberId[work.memberId] || {}, {
+        memberId: work.memberId,
+        eventId: work.eventId,
+        workGroup: work.workGroup || "",
+        workRole: work.workRole || "",
+        work: work.work || "",
+      });
+    });
+
+  readCheckinReplies_()
+    .filter(reply => reply.eventId === targetEventId)
+    .forEach(reply => {
+      recordsByMemberId[reply.memberId] = mergeCheckinIntoRecord_(recordsByMemberId[reply.memberId] || {
+        memberId: reply.memberId,
+        eventId: reply.eventId,
+        expected: "未確認",
+      }, reply);
+      if (!members.some(member => member.id === reply.memberId)) {
+        members.push({
+          id: reply.memberId,
+          familyId: reply.familyId,
+          name: reply.name,
+          role: reply.role,
+          group: reply.group,
+          squad: reply.squad,
+          sourceGroup: reply.group,
+          eagleQualified: false,
+          active: true,
+        });
+      }
+    });
+
+  const rows = overviewEntrances_(event.eagleSplit).reduce((allRows, entry) => {
+    SQUADS_[entry.key].forEach(squad => {
+      const scopedMembers = members.filter(member => {
+        const record = overviewRecord_(recordsByMemberId, member, targetEventId);
+        if (record.expected === "未確認" && !isGuestMember_(member)) return false;
+        if (record.expected === "請假") return false;
+        return resolveCheckinGroup_(member, record, events) === entry.key
+          && resolveCheckinSquad_(member, record, events) === squad;
+      });
+      const records = scopedMembers.map(member => overviewRecord_(recordsByMemberId, member, targetEventId));
+      allRows.push([
+        targetEventId,
+        entry.key,
+        squad,
+        scopedMembers.length,
+        records.filter(hasMorning_).length,
+        records.filter(hasAfternoon_).length,
+        records.filter(record => record.status === "遲到" || record.status === "下午遲到" || record.amLate || record.pmLate).length,
+        records.filter(record => record.status === "未到").length,
+        countFamilyAlerts_(members, recordsByMemberId, familySubmitted, targetEventId, entry.key, squad, events),
+      ]);
+    });
+    return allRows;
+  }, []);
+
+  writeSheet_(SHEETS.overview, rows);
+}
+
+const SQUADS_ = {
+  "小蟻": ["小黑蟻", "小黃蟻", "小綠蟻", "小紅蟻", "小蟻團團隊"],
+  "炫蜂": ["泥壺蜂", "虎頭蜂", "長腳蜂", "細腰蜂", "炫蜂團團隊"],
+  "奔鹿": ["高地鹿", "森林鹿", "草原鹿", "湖泊鹿", "奔鹿團團隊"],
+  "翔鷹": ["鷹團", "翔鷹團團隊"],
+  "育成會": ["花叢", "天空", "草原", "大地", "育苗小藍隊"],
+  "育成鷹團": ["育成鷹團"],
+};
+
+const ENTRANCES_ = [
+  { key: "小蟻" },
+  { key: "炫蜂" },
+  { key: "奔鹿" },
+  { key: "翔鷹" },
+  { key: "育成會" },
+  { key: "育成鷹團" },
+];
+
+function overviewEntrances_(eagleSplit) {
+  return eagleSplit ? ENTRANCES_ : ENTRANCES_.filter(entry => entry.key !== "育成鷹團");
+}
+
+function readMembers_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.members);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.members].length).getValues()
+    .map(row => ({
+      id: row[0] || "",
+      familyId: row[1] || "",
+      name: row[2] || "",
+      role: row[3] || "",
+      group: row[4] || "",
+      squad: row[5] || "",
+      sourceGroup: row[6] || row[4] || "",
+      eagleQualified: row[7] === "是" || row[7] === true,
+      active: row[8] !== "否",
+    }))
+    .filter(member => member.id && member.active);
+}
+
+function readWorkAssignments_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.work);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.work].length).getValues()
+    .map(row => ({
+      eventId: String(row[0] || "").padStart(2, "0"),
+      memberId: row[1] || "",
+      workGroup: row[7] || "",
+      workRole: row[8] || "",
+      work: row[9] || "",
+    }))
+    .filter(row => row.eventId && row.memberId);
+}
+
+function mergeCheckinIntoRecord_(record, reply) {
+  record.status = reply.status || record.status || "未確認";
+  record.note = reply.note || record.note || "";
+  if (reply.period === "下午") {
+    record.pm = reply.pm;
+    record.pmLate = reply.status === "下午遲到";
+  } else {
+    record.am = reply.am;
+    record.amLate = reply.status === "遲到";
+  }
+  return record;
+}
+
+function overviewRecord_(recordsByMemberId, member, eventId) {
+  if (!recordsByMemberId[member.id]) {
+    recordsByMemberId[member.id] = {
+      memberId: member.id,
+      eventId: eventId,
+      expected: "未確認",
+      status: "未確認",
+      am: false,
+      pm: false,
+      amLate: false,
+      pmLate: false,
+      route: "",
+      workGroup: "",
+    };
+  }
+  return recordsByMemberId[member.id];
+}
+
+function countFamilyAlerts_(members, recordsByMemberId, familySubmitted, eventId, group, squad, events) {
+  let count = 0;
+  const byFamily = {};
+  members.forEach(member => {
+    if (!byFamily[member.familyId]) byFamily[member.familyId] = [];
+    byFamily[member.familyId].push(member);
+  });
+  Object.keys(byFamily).forEach(familyId => {
+    const familyMembers = byFamily[familyId];
+    const adults = familyMembers.filter(member => member.role === "成人");
+    familyMembers.filter(member => member.role !== "成人").forEach(child => {
+      const childRecord = overviewRecord_(recordsByMemberId, child, eventId);
+      if (resolveCheckinGroup_(child, childRecord, events) !== group || resolveCheckinSquad_(child, childRecord, events) !== squad) return;
+      [
+        { period: "am", present: hasMorning_(childRecord) },
+        { period: "pm", present: hasAfternoon_(childRecord) },
+      ].forEach(item => {
+        const adultPresent = adults.some(adult => isAccompanyingAdultPresent_(adult, item.period, Boolean(familySubmitted[familyId]), recordsByMemberId, eventId));
+        if (item.present && !adultPresent) count += 1;
+      });
+    });
+  });
+  return count;
+}
+
+function isAccompanyingAdultPresent_(adult, period, familySubmitted, recordsByMemberId, eventId) {
+  const record = overviewRecord_(recordsByMemberId, adult, eventId);
+  if (record.expected === "請假") return false;
+  if (familySubmitted && record.expected === "未確認") return false;
+  if (!record.status || record.status === "未確認") return false;
+  return period === "am" ? hasMorning_(record) : hasAfternoon_(record);
+}
+
+function hasMorning_(record) {
+  return Boolean(record.am) || record.status === "出席" || record.status === "全天出席" || record.status === "遲到" || record.status === "下午請假";
+}
+
+function hasAfternoon_(record) {
+  return Boolean(record.pm) || record.status === "出席" || record.status === "全天出席" || record.status === "下午遲到" || record.status === "上午請假";
+}
+
+function isGuestMember_(member) {
+  return String(member.id || "").indexOf("guest-") === 0;
 }
 
 function formatDateValue_(value) {

@@ -876,7 +876,11 @@ function renderEntrances() {
     button.className = "entrance-card";
     button.hidden = entry.key === "育成鷹團" && !currentEvent().eagleSplit;
     button.classList.toggle("is-active", activeEntrance === entry.key);
-    button.innerHTML = `${entry.label}<span>${entry.hint}</span>`;
+    button.innerHTML = `
+      <strong>${entry.label}</strong>
+      <span>${entry.hint}</span>
+      ${renderEntranceTotals(entry.key)}
+    `;
     button.addEventListener("click", () => {
       activeEntrance = entry.key;
       activeSquad = "全部";
@@ -1003,12 +1007,13 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
 function renderCheckinRecorderPanel(submission) {
   checkinRecorderPanel.classList.remove("recorder-panel");
   if (activeSquad === "全部") {
-    checkinRecorderPanel.innerHTML = "";
+    checkinRecorderPanel.innerHTML = renderCheckinNoticeSummary();
     return;
   }
   if (submission) {
     checkinRecorderPanel.innerHTML = `
       <div class="confirm-status"><strong>點名人員</strong><span>${escapeHtml(submission.recorder)}</span></div>
+      ${renderCheckinNoticeSummary()}
     `;
     return;
   }
@@ -1022,6 +1027,7 @@ function renderCheckinRecorderPanel(submission) {
       <span>點名人員自然名（必填）</span>
       <input id="checkinRecorder" type="text" value="${escapeAttribute(state.checkinRecorderDrafts?.[checkinSubmissionKey()] || "")}" placeholder="請填自然名">
     </label>
+    ${renderCheckinNoticeSummary()}
   `;
   checkinRecorderPanel.querySelector("#checkinRecorder").addEventListener("input", (event) => {
     state.checkinRecorderDrafts[checkinSubmissionKey()] = normalize(event.target.value);
@@ -1093,6 +1099,83 @@ function renderCheckinSubmitPanel(submission) {
     saveState();
     render();
   });
+}
+
+function renderEntranceTotals(entranceKey) {
+  const summary = checkinSummaryFor(entranceKey, "全部");
+  return `
+    <div class="entrance-totals" aria-label="${escapeAttribute(entranceKey)}點名統計">
+      <span>預計 ${summary.expected} 人</span>
+      <span>${checkinPeriodLabel(activeCheckinPeriod)}實到 ${summary.actual} 人</span>
+      <span>預計請假 ${summary.leaveTotal} 人</span>
+      <span>實際缺席 ${summary.absent.length} 人</span>
+    </div>
+    <div class="entrance-names">
+      <b>預計請假</b>${escapeHtml(summary.leaveAllNames || "無")}
+      <b>${checkinPeriodLabel(activeCheckinPeriod)}缺席</b>${escapeHtml(summary.absentNames || "無")}
+    </div>
+  `;
+}
+
+function renderCheckinNoticeSummary() {
+  const summary = checkinSummaryFor(activeEntrance, activeSquad);
+  return `
+    <section class="checkin-notice-summary" aria-label="本次請假與缺席名單">
+      <div class="notice-line"><strong>當日請假</strong><span>${escapeHtml(summary.fullLeaveNames || "無")}</span></div>
+      <div class="notice-line"><strong>上午請假</strong><span>${escapeHtml(summary.morningLeaveNames || "無")}</span></div>
+      <div class="notice-line"><strong>下午請假</strong><span>${escapeHtml(summary.afternoonLeaveNames || "無")}</span></div>
+      <div class="notice-line important"><strong>${checkinPeriodLabel(activeCheckinPeriod)}實際缺席</strong><span>${escapeHtml(summary.absentNames || "無")}</span></div>
+    </section>
+  `;
+}
+
+function checkinSummaryFor(entranceKey, squad) {
+  const expected = checkinExpectedMembersFor(entranceKey, squad);
+  const records = expected.map((member) => getRecord(member.id));
+  const actual = records.filter((record) => (
+    activeCheckinPeriod === "am" ? hasMorning(record) : hasAfternoon(record)
+  )).length;
+  const absent = expected.filter((member) => {
+    const record = getRecord(member.id);
+    if (activeCheckinPeriod === "am") return !hasMorning(record);
+    return !hasAfternoon(record);
+  });
+  const leaves = checkinLeaveMembersFor(entranceKey, squad);
+  const fullLeave = leaves.filter((member) => normalizePartialLeaveStatus(getRecord(member.id).expected) === "請假");
+  const morningLeave = leaves.filter((member) => isMorningLeave(getRecord(member.id).expected));
+  const afternoonLeave = leaves.filter((member) => isAfternoonLeave(getRecord(member.id).expected));
+  return {
+    expected: expected.length,
+    actual,
+    absent,
+    absentNames: namesText(absent),
+    leaveTotal: leaves.length,
+    leaveAllNames: namesText(leaves),
+    fullLeaveNames: namesText(fullLeave),
+    morningLeaveNames: namesText(morningLeave),
+    afternoonLeaveNames: namesText(afternoonLeave),
+  };
+}
+
+function checkinExpectedMembersFor(entranceKey, squad) {
+  return expectedMembers()
+    .filter((member) => resolveCheckinGroup(member) === entranceKey)
+    .filter((member) => squad === "全部" || resolveCheckinSquad(member) === squad);
+}
+
+function checkinLeaveMembersFor(entranceKey, squad) {
+  return state.members
+    .filter((member) => {
+      const expected = normalizePartialLeaveStatus(getRecord(member.id).expected);
+      return ["請假", "上午請假", "下午請假"].includes(expected);
+    })
+    .filter((member) => resolveCheckinGroup(member) === entranceKey)
+    .filter((member) => squad === "全部" || resolveCheckinSquad(member) === squad)
+    .sort(checkinSort);
+}
+
+function namesText(members) {
+  return members.map((member) => member.name).join("、");
 }
 
 function syncGuestFields() {
