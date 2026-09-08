@@ -1056,6 +1056,12 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
   familyConfirmPanel.innerHTML = `
     <p class="required-note">必填：每位成員上方出席狀態；分流成人另需填老鷹單飛活動選擇。</p>
     <button id="confirmFamily" type="button">確認送出家庭資料</button>
+    <div class="public-leave-note">
+      <strong>公假範圍：</strong>
+      <p>1. 大人：學校親師座談、執行經團會長與複式同意之荒野相關任務（受訓、工人、講師等）。</p>
+      <p>2. 小孩：學校正式活動或賽事（校慶、園遊會、運動會、入學考試等以班、校、國家為單位，而非個人活動）、執行經團會長與複式同意之荒野相關任務（翔鷹營、科學營、行動論壇等）。</p>
+      <p>註：家長因公請假，孩子得出席團集會，不計缺席。</p>
+    </div>
   `;
   familyConfirmPanel.querySelector("#confirmFamily").addEventListener("click", async () => {
     const missing = validateFamilyConfirmation(familyId);
