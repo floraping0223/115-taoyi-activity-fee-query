@@ -386,7 +386,12 @@ function readWorkAssignments_() {
 function mergeCheckinIntoRecord_(record, reply) {
   record.status = reply.status || record.status || "未確認";
   record.note = reply.note || record.note || "";
-  if (reply.period === "下午") {
+  if (reply.period === "全場" || reply.period === "full") {
+    record.am = reply.am;
+    record.pm = reply.pm;
+    record.amLate = reply.status === "遲到";
+    record.pmLate = reply.status === "下午遲到";
+  } else if (reply.period === "下午") {
     record.pm = reply.pm;
     record.pmLate = reply.status === "下午遲到";
   } else {
@@ -579,6 +584,7 @@ function checkinSubmissionKey_(eventId, group, squad, period) {
 }
 
 function checkinPeriodLabel_(period) {
+  if (period === "full" || period === "全場") return "全場";
   return period === "pm" || period === "下午" ? "下午" : "上午";
 }
 

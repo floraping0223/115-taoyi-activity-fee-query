@@ -602,16 +602,25 @@ label span {
   display: none;
 }
 
-.entrance-card span {
+.entrance-card > span {
   display: block;
   margin-top: 4px;
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 12px;
   font-weight: 700;
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .entrance-card > strong {
-  font-size: 16px;
+  color: var(--navy);
+  font-size: 19px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.entrance-card.is-active > strong,
+.entrance-card.is-active > span {
+  color: #fff;
 }
 
 .entrance-totals {
