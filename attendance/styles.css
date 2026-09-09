@@ -645,6 +645,18 @@ label span {
   background: rgba(255, 255, 255, 0.18);
 }
 
+.entrance-totals span.summary-leave,
+.entrance-card.is-active .entrance-totals span.summary-leave {
+  color: var(--red);
+  background: var(--soft-red);
+}
+
+.entrance-totals span.summary-absent,
+.entrance-card.is-active .entrance-totals span.summary-absent {
+  color: var(--amber);
+  background: var(--soft-amber);
+}
+
 .entrance-names {
   display: grid;
   gap: 2px;
@@ -661,6 +673,16 @@ label span {
 .entrance-names b {
   color: inherit;
   font-size: 12px;
+}
+
+.entrance-names .summary-leave,
+.entrance-card.is-active .entrance-names .summary-leave {
+  color: var(--red);
+}
+
+.entrance-names .summary-absent,
+.entrance-card.is-active .entrance-names .summary-absent {
+  color: var(--amber);
 }
 
 .checkin-board {
@@ -794,8 +816,15 @@ label span {
 }
 
 .notice-line.important strong,
-.notice-line.important span {
+.notice-line.important span,
+.notice-line.leave strong,
+.notice-line.leave span {
   color: var(--red);
+}
+
+.notice-line.absent strong,
+.notice-line.absent span {
+  color: var(--amber);
 }
 
 .confirm-status {

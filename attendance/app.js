@@ -1316,12 +1316,12 @@ function renderEntranceTotals(entranceKey) {
     <div class="entrance-totals" aria-label="${escapeAttribute(entranceKey)}點名統計">
       <span>預計 ${summary.expected} 人</span>
       <span>${periodText}實到 ${summary.actual} 人</span>
-      <span>預計請假 ${summary.leaveTotal} 人</span>
-      <span>實際缺席 ${summary.absent.length} 人</span>
+      <span class="summary-leave">預計請假 ${summary.leaveTotal} 人</span>
+      <span class="summary-absent">實際缺席 ${summary.absent.length} 人</span>
     </div>
     <div class="entrance-names">
-      <b>預計請假</b>${escapeHtml(summary.leaveAllNames || "無")}
-      <b>${periodText}缺席</b>${escapeHtml(summary.absentNames || "無")}
+      <b class="summary-leave">預計請假</b><span class="summary-leave">${escapeHtml(summary.leaveAllNames || "無")}</span>
+      <b class="summary-absent">${periodText}缺席</b><span class="summary-absent">${escapeHtml(summary.absentNames || "無")}</span>
     </div>
   `;
 }
@@ -1330,10 +1330,10 @@ function renderCheckinNoticeSummary() {
   const summary = checkinSummaryFor(activeEntrance, activeSquad);
   return `
     <section class="checkin-notice-summary" aria-label="本次請假與缺席名單">
-      <div class="notice-line"><strong>當日請假</strong><span>${escapeHtml(summary.fullLeaveNames || "無")}</span></div>
-      <div class="notice-line"><strong>上午請假</strong><span>${escapeHtml(summary.morningLeaveNames || "無")}</span></div>
-      <div class="notice-line"><strong>下午請假</strong><span>${escapeHtml(summary.afternoonLeaveNames || "無")}</span></div>
-      <div class="notice-line important"><strong>${checkinPeriodLabel(currentCheckinPeriod())}實際缺席</strong><span>${escapeHtml(summary.absentNames || "無")}</span></div>
+      <div class="notice-line leave"><strong>當日請假</strong><span>${escapeHtml(summary.fullLeaveNames || "無")}</span></div>
+      <div class="notice-line leave"><strong>上午請假</strong><span>${escapeHtml(summary.morningLeaveNames || "無")}</span></div>
+      <div class="notice-line leave"><strong>下午請假</strong><span>${escapeHtml(summary.afternoonLeaveNames || "無")}</span></div>
+      <div class="notice-line absent"><strong>${checkinPeriodLabel(currentCheckinPeriod())}實際缺席</strong><span>${escapeHtml(summary.absentNames || "無")}</span></div>
     </section>
   `;
 }
