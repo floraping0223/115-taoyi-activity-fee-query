@@ -41,6 +41,13 @@ function doGet(e) {
     return json_(payload);
   }
   setupWorkbook_();
+  if (action === "cleanup") {
+    const result = cleanupDuplicateReplySheets_();
+    refreshDailyOverview_(PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01");
+    writeSystemCheck_();
+    if (callback) return javascript_(callback, result);
+    return json_(result);
+  }
   if (action === "setup") {
     return text_("115桃一親子團全年出勤管理系統分頁已建立：" + spreadsheet_().getUrl());
   }
@@ -529,13 +536,22 @@ function appendUniqueRows_(name, rows, keyGetter) {
   const sheet = sheet_(name);
   const width = HEADERS[name].length;
   const existing = new Set();
+  let duplicateCount = 0;
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, width).getValues().forEach(row => {
       const key = keyGetter(row);
-      if (!key || existing.has(key)) return;
+      if (!key) return;
+      if (existing.has(key)) {
+        duplicateCount += 1;
+        return;
+      }
       existing.add(key);
     });
+  }
+  if (duplicateCount > 0) {
+    dedupeSheetByKey_(name, keyGetter);
+    return appendUniqueRows_(name, rows, keyGetter);
   }
   const fresh = (rows || []).filter(row => {
     const key = keyGetter(row);
@@ -548,6 +564,43 @@ function appendUniqueRows_(name, rows, keyGetter) {
   }
   formatSheet_(sheet);
   return { matched: (rows || []).length, added: fresh.length, kept: Math.max(lastRow - 1, 0) };
+}
+
+function cleanupDuplicateReplySheets_() {
+  const pre = dedupeSheetByKey_(SHEETS.pre, row => [row[0], row[1]].join("|"));
+  const onsite = dedupeSheetByKey_(SHEETS.onsite, row => [row[0], row[1], row[16] || "上午"].join("|"));
+  const work = dedupeSheetByKey_(SHEETS.work, row => [row[0], row[1]].join("|"));
+  return {
+    ok: true,
+    message: "重複資料已整理，保留每位成員最新一筆。",
+    preRemoved: pre.removed,
+    onsiteRemoved: onsite.removed,
+    workRemoved: work.removed,
+  };
+}
+
+function dedupeSheetByKey_(name, keyGetter) {
+  const sheet = sheet_(name);
+  const width = HEADERS[name].length;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return { removed: 0, kept: 0 };
+  const rows = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+  const byKey = {};
+  const orderedKeys = [];
+  rows.forEach(row => {
+    const key = keyGetter(row);
+    if (!key || key === "|") {
+      orderedKeys.push("__row_" + orderedKeys.length);
+      byKey[orderedKeys[orderedKeys.length - 1]] = row;
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(byKey, key)) orderedKeys.push(key);
+    byKey[key] = row;
+  });
+  const keptRows = orderedKeys.map(key => byKey[key]);
+  const removed = rows.length - keptRows.length;
+  if (removed > 0) writeSheet_(name, keptRows);
+  return { removed, kept: keptRows.length };
 }
 
 function writeSystemCheck_() {
