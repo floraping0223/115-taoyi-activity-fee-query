@@ -92,10 +92,7 @@ function writeSnapshot_(payload) {
   const isAdminSync = payload.intent === "admin";
 
   if (isAdminSync) {
-    writeSheet_(SHEETS.members, (payload.members || []).map(member => [
-      member.id, member.familyId, member.name, member.role, member.group, member.squad,
-      member.sourceGroup || "", member.eagleQualified ? "是" : "否", "是", "",
-    ]));
+    mergeMemberRows_(payload.members || []);
 
     writeSheet_(SHEETS.events, (payload.events || []).map(event => [
       event.id, event.date || "", event.name || "", yes_(event.preOpen), yes_(event.onsiteOpen),
@@ -407,6 +404,42 @@ function readMembers_() {
       active: row[8] !== "否",
     }))
     .filter(member => member.id && member.active);
+}
+
+function readAllMemberRows_() {
+  const sheet = spreadsheet_().getSheetByName(SHEETS.members);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.members].length).getValues();
+}
+
+function mergeMemberRows_(members) {
+  const existingRows = readAllMemberRows_();
+  const existingById = {};
+  const orderedIds = [];
+  existingRows.forEach(row => {
+    const id = row[0] || "";
+    if (!id) return;
+    if (!Object.prototype.hasOwnProperty.call(existingById, id)) orderedIds.push(id);
+    existingById[id] = row;
+  });
+  (members || []).forEach(member => {
+    if (!member.id) return;
+    const existing = existingById[member.id];
+    if (!existing) orderedIds.push(member.id);
+    existingById[member.id] = [
+      member.id,
+      existing ? existing[1] : member.familyId,
+      existing ? existing[2] : member.name,
+      existing ? existing[3] : member.role,
+      existing ? existing[4] : member.group,
+      existing ? existing[5] : member.squad,
+      existing ? existing[6] : member.sourceGroup || "",
+      existing ? existing[7] : member.eagleQualified ? "是" : "否",
+      existing ? existing[8] || "是" : "是",
+      existing ? existing[9] || "" : "",
+    ];
+  });
+  writeSheet_(SHEETS.members, orderedIds.map(id => existingById[id]).filter(Boolean));
 }
 
 function readWorkAssignments_() {
