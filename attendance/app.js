@@ -1809,6 +1809,7 @@ function resolveGroup(member) {
 function resolveSquad(member) {
   const group = resolveGroup(member);
   if (group === "育成鷹團") return "育成鷹團";
+  if (group === "翔鷹" && member.squad === "鷹") return "鷹團";
   if (SQUADS[group]?.includes(member.squad)) return member.squad;
   return SQUADS[group]?.[0] || member.squad || "未分隊";
 }
