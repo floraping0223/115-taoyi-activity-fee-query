@@ -535,35 +535,44 @@ function writeSheet_(name, rows) {
 function appendUniqueRows_(name, rows, keyGetter) {
   const sheet = sheet_(name);
   const width = HEADERS[name].length;
-  const existing = new Set();
+  const existing = {};
+  const orderedKeys = [];
   let duplicateCount = 0;
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, width).getValues().forEach(row => {
       const key = keyGetter(row);
       if (!key) return;
-      if (existing.has(key)) {
+      if (Object.prototype.hasOwnProperty.call(existing, key)) {
         duplicateCount += 1;
-        return;
+      } else {
+        orderedKeys.push(key);
       }
-      existing.add(key);
+      existing[key] = row;
     });
   }
-  if (duplicateCount > 0) {
-    dedupeSheetByKey_(name, keyGetter);
-    return appendUniqueRows_(name, rows, keyGetter);
-  }
-  const fresh = (rows || []).filter(row => {
+  let replaced = 0;
+  const fresh = [];
+  (rows || []).forEach(row => {
     const key = keyGetter(row);
-    if (!key || existing.has(key)) return false;
-    existing.add(key);
-    return true;
+    if (!key) return;
+    if (Object.prototype.hasOwnProperty.call(existing, key)) {
+      if (JSON.stringify(existing[key]) !== JSON.stringify(row)) replaced += 1;
+      existing[key] = row;
+      return;
+    }
+    existing[key] = row;
+    orderedKeys.push(key);
+    fresh.push(row);
   });
-  if (fresh.length) {
+  if (duplicateCount > 0 || replaced > 0) {
+    const values = orderedKeys.map(key => existing[key]);
+    writeSheet_(name, values);
+  } else if (fresh.length) {
     sheet.getRange(lastRow + 1, 1, fresh.length, width).setValues(fresh);
+    formatSheet_(sheet);
   }
-  formatSheet_(sheet);
-  return { matched: (rows || []).length, added: fresh.length, kept: Math.max(lastRow - 1, 0) };
+  return { matched: (rows || []).length, added: fresh.length, replaced, removedDuplicates: duplicateCount, kept: orderedKeys.length };
 }
 
 function cleanupDuplicateReplySheets_() {
