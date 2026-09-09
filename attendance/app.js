@@ -286,6 +286,7 @@ function loadBackendSnapshotFromGoogle(options = {}) {
     window[callbackName] = (payload) => {
       clearTimeout(timer);
       const isOk = Boolean(payload?.ok);
+      const wasLoaded = backendSnapshotLoaded;
       if (isOk) backendSnapshotLoaded = true;
       const changed = mergeBackendSnapshot(payload, options);
       if (changed) {
@@ -295,6 +296,8 @@ function loadBackendSnapshotFromGoogle(options = {}) {
         syncPublicEventSelector();
         saveState();
         render();
+      } else if (isOk && !wasLoaded && APP_MODE === "family") {
+        render();
       }
       cleanup();
       resolve(isOk);
@@ -303,6 +306,8 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       const endpoint = new URL(url);
       endpoint.searchParams.set("action", "snapshot");
       endpoint.searchParams.set("callback", callbackName);
+      endpoint.searchParams.set("appMode", APP_MODE);
+      endpoint.searchParams.set("ts", String(Date.now()));
       script.src = endpoint.toString();
       script.onerror = () => {
         clearTimeout(timer);
@@ -1068,6 +1073,11 @@ function renderFamily() {
     familyConfirmPanel.innerHTML = "";
     return;
   }
+  if (APP_MODE === "family" && DEFAULT_SCRIPT_URL && !backendSnapshotLoaded) {
+    familyCards.innerHTML = `<div class="empty-note">正在確認 Google 後端是否已有回覆，請稍候。</div>`;
+    familyConfirmPanel.innerHTML = "";
+    return;
+  }
   const familyId = normalize(familySearch.value);
   const families = groupBy(state.members, (member) => member.familyId);
   if (!familyId) {
@@ -1175,14 +1185,29 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
     </div>
   `;
   familyConfirmPanel.querySelector("#confirmFamily").addEventListener("click", async () => {
+    const button = familyConfirmPanel.querySelector("#confirmFamily");
+    button.disabled = true;
+    button.textContent = "確認後端中";
+    const backendReady = backendSnapshotLoaded || await loadBackendSnapshotFromGoogle();
+    if (!backendReady) {
+      alert("目前無法確認 Google 後端狀態，請稍後重新整理再送出，避免重複填寫。");
+      button.disabled = false;
+      button.textContent = "確認送出家庭資料";
+      return;
+    }
+    if (familyConfirmation(familyId)) {
+      renderFamily();
+      return;
+    }
     const missing = validateFamilyConfirmation(familyId);
     if (missing.length) {
       alert(`請先完成必填欄位：\n${missing.join("\n")}`);
+      button.disabled = false;
+      button.textContent = "確認送出家庭資料";
       return;
     }
     const key = familyConfirmKey(familyId);
     state.familyConfirmations[key] = { submittedAt: new Date().toISOString(), syncStatus: "pending" };
-    const button = familyConfirmPanel.querySelector("#confirmFamily");
     button.disabled = true;
     button.textContent = "送出中，請稍候";
     saveState();
