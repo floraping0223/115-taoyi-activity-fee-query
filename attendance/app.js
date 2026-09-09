@@ -1748,7 +1748,14 @@ function updateAnnualCounts(counts, status) {
 }
 
 function annualStatus(record) {
-  if (record.status && record.status !== "未確認") return normalizePartialLeaveStatus(record.status);
+  const status = normalizePartialLeaveStatus(record.status);
+  if (status && status !== "未確認") {
+    const periods = attendancePeriods(record);
+    if (periods.am && !periods.pm) return "下午請假";
+    if (!periods.am && periods.pm) return "上午請假";
+    if (periods.am && periods.pm && status === "上午實到") return "出席";
+    return status;
+  }
   const expected = normalizePartialLeaveStatus(record.expected);
   if (["請假", "上午請假", "下午請假", "公假"].includes(expected)) return expected;
   return "未確認";
