@@ -15,6 +15,17 @@ const SHEETS = {
 
 const SPREADSHEET_ID = "1t52809HqGSPSdskrF-4-dJM7gMFPaTtc2u5aFNLxfP4";
 
+const DEFAULT_RULE_WEIGHTS_ = {
+  "出席": 0,
+  "全天出席": 0,
+  "遲到": 0,
+  "上午請假": 0.5,
+  "下午請假": 0.5,
+  "未到": 1,
+  "請假": 1,
+  "公假": 0,
+};
+
 const HEADERS = {
   [SHEETS.members]: ["人員ID", "家庭編號", "自然名", "屬性", "分團", "小隊", "所屬分團", "育成鷹資格", "啟用", "備註"],
   [SHEETS.events]: ["場次", "活動日期", "活動名稱", "會前確認開放", "現場點名開放", "育成鷹團分流", "狀態", "備註"],
@@ -36,6 +47,7 @@ function doGet(e) {
   if (action === "events" || action === "snapshot") {
     setupWorkbook_();
     refreshDailyOverview_(PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01");
+    refreshAnnual_();
     const payload = readBackendSnapshot_();
     if (callback) return javascript_(callback, payload);
     return json_(payload);
@@ -44,6 +56,7 @@ function doGet(e) {
   if (action === "cleanup") {
     const result = cleanupDuplicateReplySheets_();
     refreshDailyOverview_(PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01");
+    refreshAnnual_();
     writeSystemCheck_();
     if (callback) return javascript_(callback, result);
     return json_(result);
@@ -176,16 +189,11 @@ function writeSnapshot_(payload) {
     writeSheet_(SHEETS.rules, Object.keys(payload.rules || {}).map(status => [
       status, payload.rules[status], "小孩", "",
     ]));
-
-    writeSheet_(SHEETS.annual, (payload.annual || []).map(row => [
-      row.personId, row.familyId, row.name, row.group, row.squad,
-      ...(row.events || Array(12).fill("")).slice(0, 12),
-      row.normal, row.late, row.morning, row.afternoon, row.absent, row.publicLeave || 0, row.totalAbsence, row.attendanceRate,
-    ]));
   }
 
-  if (isAdminSync || shouldAppendCheckinReplies) {
+  if (isAdminSync || shouldAppendFamilyReplies || shouldAppendCheckinReplies) {
     refreshDailyOverview_(payload.currentEventId || "01");
+    refreshAnnual_();
     writeSystemCheck_();
   }
 
@@ -367,6 +375,171 @@ function refreshDailyOverview_(eventId) {
   }, []);
 
   writeSheet_(SHEETS.overview, rows);
+}
+
+function refreshAnnual_() {
+  const events = readEventSettings_();
+  const eventIds = annualEventIds_(events);
+  const members = readMembers_();
+  const rules = readRuleWeights_();
+  const recordsByEvent = recordsForEvents_(eventIds, members);
+  const rows = members
+    .filter(member => member.role !== "成人" && member.group !== "未在團")
+    .map(member => {
+      const counts = { normal: 0, late: 0, morning: 0, afternoon: 0, absent: 0, publicLeave: 0 };
+      let total = 0;
+      let completed = 0;
+      const eventValues = eventIds.map(eventId => {
+        const recordsByMemberId = recordsByEvent[eventId] || {};
+        const record = overviewRecord_(recordsByMemberId, member, eventId);
+        const status = annualStatus_(record);
+        if (status === "未確認") return "";
+        completed += 1;
+        const weight = recordWeight_(status, rules);
+        total += weight;
+        updateAnnualCounts_(counts, status);
+        return weight;
+      });
+      const rate = completed ? (completed - total) / completed : "";
+      return [
+        member.id,
+        member.familyId,
+        member.name,
+        member.group,
+        resolveCheckinSquad_(member, overviewRecord_({}, member, eventIds[0] || "01"), events),
+        annualCell_(eventValues[0]),
+        annualCell_(eventValues[1]),
+        annualCell_(eventValues[2]),
+        annualCell_(eventValues[3]),
+        annualCell_(eventValues[4]),
+        annualCell_(eventValues[5]),
+        annualCell_(eventValues[6]),
+        annualCell_(eventValues[7]),
+        annualCell_(eventValues[8]),
+        annualCell_(eventValues[9]),
+        annualCell_(eventValues[10]),
+        annualCell_(eventValues[11]),
+        counts.normal,
+        counts.late,
+        counts.morning,
+        counts.afternoon,
+        counts.absent,
+        counts.publicLeave,
+        total,
+        rate,
+      ];
+    });
+  writeSheet_(SHEETS.annual, rows);
+}
+
+function annualCell_(value) {
+  return value === 0 ? 0 : value || "";
+}
+
+function annualEventIds_(events) {
+  const ids = (events || []).map(event => String(event.id || "").padStart(2, "0")).filter(Boolean);
+  for (let index = 1; index <= 12; index += 1) {
+    const id = String(index).padStart(2, "0");
+    if (ids.indexOf(id) < 0) ids.push(id);
+  }
+  return ids.slice(0, 12);
+}
+
+function recordsForEvents_(eventIds, members) {
+  const recordsByEvent = {};
+  eventIds.forEach(eventId => recordsByEvent[eventId] = {});
+  readFamilyReplies_()
+    .filter(reply => eventIds.indexOf(reply.eventId) >= 0)
+    .forEach(reply => {
+      const recordsByMemberId = recordsByEvent[reply.eventId] || {};
+      recordsByMemberId[reply.memberId] = Object.assign(recordsByMemberId[reply.memberId] || {}, {
+        memberId: reply.memberId,
+        eventId: reply.eventId,
+        expected: reply.expected || "未確認",
+        route: reply.route || "",
+        note: reply.note || "",
+      });
+      recordsByEvent[reply.eventId] = recordsByMemberId;
+    });
+  readWorkAssignments_()
+    .filter(work => eventIds.indexOf(work.eventId) >= 0)
+    .forEach(work => {
+      const recordsByMemberId = recordsByEvent[work.eventId] || {};
+      recordsByMemberId[work.memberId] = Object.assign(recordsByMemberId[work.memberId] || {}, {
+        memberId: work.memberId,
+        eventId: work.eventId,
+        workGroup: work.workGroup || "",
+        workRole: work.workRole || "",
+        work: work.work || "",
+      });
+      recordsByEvent[work.eventId] = recordsByMemberId;
+    });
+  readCheckinReplies_()
+    .filter(reply => eventIds.indexOf(reply.eventId) >= 0)
+    .forEach(reply => {
+      const recordsByMemberId = recordsByEvent[reply.eventId] || {};
+      recordsByMemberId[reply.memberId] = mergeCheckinIntoRecord_(recordsByMemberId[reply.memberId] || {
+        memberId: reply.memberId,
+        eventId: reply.eventId,
+        expected: "未確認",
+      }, reply);
+      if (!members.some(member => member.id === reply.memberId)) {
+        members.push({
+          id: reply.memberId,
+          familyId: reply.familyId,
+          name: reply.name,
+          role: reply.role,
+          group: reply.group,
+          squad: reply.squad,
+          sourceGroup: reply.group,
+          eagleQualified: false,
+          active: true,
+        });
+      }
+      recordsByEvent[reply.eventId] = recordsByMemberId;
+    });
+  return recordsByEvent;
+}
+
+function readRuleWeights_() {
+  const rules = Object.assign({}, DEFAULT_RULE_WEIGHTS_);
+  const sheet = spreadsheet_().getSheetByName(SHEETS.rules);
+  if (!sheet || sheet.getLastRow() <= 1) return rules;
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.rules].length).getValues()
+    .forEach(row => {
+      const status = row[0] || "";
+      const weight = Number(row[1]);
+      if (status && isFinite(weight)) rules[status] = weight;
+    });
+  return rules;
+}
+
+function annualStatus_(record) {
+  const status = normalizePartialLeaveStatus_(record.status || "");
+  if (status && status !== "未確認") {
+    const am = hasMorning_(record);
+    const pm = hasAfternoon_(record);
+    if (am && !pm) return "下午請假";
+    if (!am && pm) return "上午請假";
+    if (am && pm && status === "上午實到") return "出席";
+    return status;
+  }
+  const expected = normalizePartialLeaveStatus_(record.expected || "");
+  if (["請假", "上午請假", "下午請假", "公假"].indexOf(expected) >= 0) return expected;
+  return "未確認";
+}
+
+function recordWeight_(status, rules) {
+  return Number(rules[status] != null ? rules[status] : DEFAULT_RULE_WEIGHTS_[status] || 0);
+}
+
+function updateAnnualCounts_(counts, status) {
+  if (status === "出席" || status === "全天出席") counts.normal += 1;
+  if (status === "遲到") counts.late += 1;
+  if (status === "下午請假") counts.morning += 1;
+  if (status === "上午請假") counts.afternoon += 1;
+  if (status === "未到" || status === "請假") counts.absent += 1;
+  if (status === "公假") counts.publicLeave += 1;
 }
 
 const SQUADS_ = {
