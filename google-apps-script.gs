@@ -135,7 +135,7 @@ function writeSnapshot_(payload) {
       group, squad, record.status || "", yes_(record.am), yes_(record.pm), yes_(statusText === "遲到"), yes_(statusText === "下午遲到"),
       yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || "", checkinPeriodLabel_(period)];
   }) : [];
-  const checkinAppend = appendUniqueRows_(SHEETS.onsite, checkinRows, row => [row[0], row[1], row[16] || "上午"].join("|"));
+  const checkinAppend = appendUniqueRows_(SHEETS.onsite, checkinRows, row => [row[0], row[1], row[16] || "上午"].join("|"), { replaceExisting: false });
 
   if (isAdminSync) {
     writeSheet_(SHEETS.splits, (payload.events || []).map(event => [
@@ -167,7 +167,7 @@ function writeSnapshot_(payload) {
     const squad = resolveCheckinSquad_(member, record, payload.events || []);
     return [record.eventId, record.memberId, member.familyId || "", member.name || "",
       group, squad, record.expected || "", record.workGroup || "", record.workRole || "", record.work || "", ""];
-  }) : [], row => [row[0], row[1]].join("|"));
+  }) : [], row => [row[0], row[1]].join("|"), { replaceExisting: false });
 
   if (isAdminSync) {
     writeSheet_(SHEETS.rules, Object.keys(payload.rules || {}).map(status => [
@@ -566,7 +566,8 @@ function writeSheet_(name, rows) {
   formatSheet_(sheet);
 }
 
-function appendUniqueRows_(name, rows, keyGetter) {
+function appendUniqueRows_(name, rows, keyGetter, options) {
+  const replaceExisting = !options || options.replaceExisting !== false;
   const sheet = sheet_(name);
   const width = HEADERS[name].length;
   const existing = {};
@@ -591,8 +592,10 @@ function appendUniqueRows_(name, rows, keyGetter) {
     const key = keyGetter(row);
     if (!key) return;
     if (Object.prototype.hasOwnProperty.call(existing, key)) {
-      if (JSON.stringify(existing[key]) !== JSON.stringify(row)) replaced += 1;
-      existing[key] = row;
+      if (replaceExisting) {
+        if (JSON.stringify(existing[key]) !== JSON.stringify(row)) replaced += 1;
+        existing[key] = row;
+      }
       return;
     }
     existing[key] = row;
