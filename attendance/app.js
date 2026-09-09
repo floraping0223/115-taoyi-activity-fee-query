@@ -1760,19 +1760,20 @@ function findFamilyAlerts() {
   Object.entries(byFamily).forEach(([familyId, members]) => {
     const adults = members.filter(isAdult);
     const familySubmitted = Boolean(familyConfirmation(familyId));
+    const adultPresent = familyHasAccompanyingAdult(adults, familySubmitted);
     members.filter(isChild).forEach((child) => {
       const record = getRecord(child.id);
-      [
-        ["上午", hasMorning(record), familyHasPublicLeaveAdult(adults) || adults.some((adult) => isAccompanyingAdultPresent(adult, "am", familySubmitted))],
-        ["下午", hasAfternoon(record), familyHasPublicLeaveAdult(adults) || adults.some((adult) => isAccompanyingAdultPresent(adult, "pm", familySubmitted))],
-      ].forEach(([period, childPresent, adultPresent]) => {
-        if (childPresent && !adultPresent) {
-          alerts.push({ familyId, period, name: child.name, group: child.group, squad: child.squad });
-        }
-      });
+      const childPresent = hasMorning(record) || hasAfternoon(record);
+      if (childPresent && !adultPresent) {
+        alerts.push({ familyId, period: childAttendancePeriodLabel(record), name: child.name, group: child.group, squad: child.squad });
+      }
     });
   });
   return alerts;
+}
+
+function familyHasAccompanyingAdult(adults, familySubmitted = false) {
+  return familyHasPublicLeaveAdult(adults) || adults.some((adult) => isAccompanyingAdultPresent(adult, "any", familySubmitted));
 }
 
 function isAccompanyingAdultPresent(adult, period, familySubmitted = false) {
@@ -1780,11 +1781,19 @@ function isAccompanyingAdultPresent(adult, period, familySubmitted = false) {
   if (record.expected === "請假" || record.expected === "公假") return false;
   if (familySubmitted && record.expected === "未確認") return false;
   if (record.status === "未確認") return false;
+  if (period === "any") return hasMorning(record) || hasAfternoon(record);
   return period === "am" ? hasMorning(record) : hasAfternoon(record);
 }
 
 function familyHasPublicLeaveAdult(adults) {
   return adults.some((adult) => getRecord(adult.id).expected === "公假");
+}
+
+function childAttendancePeriodLabel(record) {
+  if (hasMorning(record) && hasAfternoon(record)) return "全天";
+  if (hasMorning(record)) return "上午";
+  if (hasAfternoon(record)) return "下午";
+  return "";
 }
 
 function expectedMembers(options = {}) {

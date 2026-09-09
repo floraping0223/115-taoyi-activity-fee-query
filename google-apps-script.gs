@@ -505,20 +505,20 @@ function countFamilyAlerts_(members, recordsByMemberId, familySubmitted, eventId
   Object.keys(byFamily).forEach(familyId => {
     const familyMembers = byFamily[familyId];
     const adults = familyMembers.filter(member => member.role === "成人");
+    const adultPresent = familyHasAccompanyingAdult_(adults, Boolean(familySubmitted[familyId]), recordsByMemberId, eventId);
     familyMembers.filter(member => member.role !== "成人").forEach(child => {
       const childRecord = overviewRecord_(recordsByMemberId, child, eventId);
       if (resolveCheckinGroup_(child, childRecord, events) !== group || resolveCheckinSquad_(child, childRecord, events) !== squad) return;
-      [
-        { period: "am", present: hasMorning_(childRecord) },
-        { period: "pm", present: hasAfternoon_(childRecord) },
-      ].forEach(item => {
-        const adultPresent = familyHasPublicLeaveAdult_(adults, recordsByMemberId, eventId)
-          || adults.some(adult => isAccompanyingAdultPresent_(adult, item.period, Boolean(familySubmitted[familyId]), recordsByMemberId, eventId));
-        if (item.present && !adultPresent) count += 1;
-      });
+      const childPresent = hasMorning_(childRecord) || hasAfternoon_(childRecord);
+      if (childPresent && !adultPresent) count += 1;
     });
   });
   return count;
+}
+
+function familyHasAccompanyingAdult_(adults, familySubmitted, recordsByMemberId, eventId) {
+  return familyHasPublicLeaveAdult_(adults, recordsByMemberId, eventId)
+    || adults.some(adult => isAccompanyingAdultPresent_(adult, "any", familySubmitted, recordsByMemberId, eventId));
 }
 
 function isAccompanyingAdultPresent_(adult, period, familySubmitted, recordsByMemberId, eventId) {
@@ -526,6 +526,7 @@ function isAccompanyingAdultPresent_(adult, period, familySubmitted, recordsByMe
   if (record.expected === "請假" || record.expected === "公假") return false;
   if (familySubmitted && record.expected === "未確認") return false;
   if (!record.status || record.status === "未確認") return false;
+  if (period === "any") return hasMorning_(record) || hasAfternoon_(record);
   return period === "am" ? hasMorning_(record) : hasAfternoon_(record);
 }
 
