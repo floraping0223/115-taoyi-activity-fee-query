@@ -517,7 +517,7 @@ function reconcileCheckinsWithBackend(eventId, backendCheckinKeys) {
   Object.entries(state.checkinSubmissions || {}).forEach(([key, submission]) => {
     const [submissionEventId] = key.split("|");
     if (submissionEventId !== eventId) return;
-    if (submission.syncStatus === "sent" && !backendCheckinKeys.has(key)) {
+    if (!backendCheckinKeys.has(key)) {
       delete state.checkinSubmissions[key];
       changed = true;
     }
