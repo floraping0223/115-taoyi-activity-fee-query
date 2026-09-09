@@ -504,6 +504,17 @@ async function syncToGoogle(options = {}) {
       body: JSON.stringify(buildSyncPayload(intent)),
     });
     markSubmissionsSynced(intent);
+    if (options.quickConfirm) {
+      setTimeout(() => {
+        loadBackendSnapshotFromGoogle({ preserveLocalPending: true }).then((loaded) => {
+          if (!loaded) return;
+          saveState();
+          render();
+        });
+      }, 2500);
+      if (!silent) syncGoogle.textContent = "已送出";
+      return true;
+    }
     const loaded = await loadBackendSnapshotFromGoogle({ preserveLocalPending: true });
     const confirmed = options.confirmationKey
       ? await waitForBackendConfirmation(intent, options.confirmationKey, loaded)
@@ -1018,9 +1029,11 @@ function renderFamily() {
     familyConfirmPanel.innerHTML = "";
     return;
   }
-  const confirmation = familyConfirmation(familyId);
-  familyCards.replaceChildren(...members.map((member) => renderPersonCard(member, "family", { locked: Boolean(confirmation) })));
-  renderFamilyConfirmPanel(familyId, confirmation);
+  const confirmedConfirmation = familyConfirmation(familyId);
+  const pendingConfirmation = pendingFamilyConfirmation(familyId);
+  const visibleConfirmation = confirmedConfirmation || pendingConfirmation;
+  familyCards.replaceChildren(...members.map((member) => renderPersonCard(member, "family", { locked: Boolean(visibleConfirmation) })));
+  renderFamilyConfirmPanel(familyId, visibleConfirmation);
 }
 
 function renderCheckin() {
@@ -1091,9 +1104,10 @@ function renderCheckinPeriodTabs() {
 
 function renderFamilyConfirmPanel(familyId, confirmation) {
   if (confirmation) {
+    const isConfirmed = confirmation.syncStatus === "sent" && confirmation.backendConfirmed;
     familyConfirmPanel.innerHTML = `
-      <div class="confirm-status"><strong>本家庭已完成確認</strong><span>${formatTime(confirmation.submittedAt)}｜${syncStatusText(confirmation)}</span></div>
-      <p class="confirm-help">表單填寫如需修改，請洽點名人員孔雀魚。</p>
+      <div class="confirm-status"><strong>${isConfirmed ? "本家庭已完成確認" : "本家庭已送出，後端同步中"}</strong><span>${formatTime(confirmation.submittedAt)}｜${syncStatusText(confirmation)}</span></div>
+      <p class="confirm-help">${isConfirmed ? "表單填寫如需修改，請洽點名人員孔雀魚。" : "請勿重複填寫；系統會自動確認 Google 是否收到。"}</p>
     `;
     return;
   }
@@ -1119,7 +1133,7 @@ function renderFamilyConfirmPanel(familyId, confirmation) {
     button.disabled = true;
     button.textContent = "送出中，請稍候";
     saveState();
-    const synced = await syncToGoogle({ silent: true, intent: "family", confirmationKey: key });
+    const synced = await syncToGoogle({ silent: true, intent: "family", confirmationKey: key, quickConfirm: true });
     if (state.familyConfirmations[key] && state.familyConfirmations[key].syncStatus !== "sent") {
       state.familyConfirmations[key].syncStatus = synced ? "pending" : "failed";
       state.familyConfirmations[key].syncedAt = synced ? state.familyConfirmations[key].syncedAt || new Date().toISOString() : "";
@@ -1803,6 +1817,13 @@ function familyConfirmation(familyId) {
   if (!confirmation) return null;
   if (confirmation.syncStatus === "sent" && confirmation.backendConfirmed) return confirmation;
   return null;
+}
+
+function pendingFamilyConfirmation(familyId) {
+  const confirmation = state.familyConfirmations?.[familyConfirmKey(familyId)] || null;
+  if (!confirmation) return null;
+  if (confirmation.syncStatus === "sent" && confirmation.backendConfirmed) return null;
+  return confirmation;
 }
 
 function checkinSubmissionKey() {

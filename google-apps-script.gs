@@ -49,7 +49,6 @@ function doGet(e) {
 
 function doPost(e) {
   const payload = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-  setupWorkbook_();
   if (payload.action !== "snapshot") {
     return json_({ ok: false, message: "Unsupported action" });
   }
@@ -68,12 +67,17 @@ function spreadsheet_() {
 }
 
 function setupWorkbook_() {
-  const spreadsheet = spreadsheet_();
   Object.values(SHEETS).forEach(name => {
-    const sheet = spreadsheet.getSheetByName(name) || spreadsheet.insertSheet(name);
-    ensureHeaders_(sheet, name);
+    const sheet = sheet_(name);
     formatSheet_(sheet);
   });
+}
+
+function sheet_(name) {
+  const spreadsheet = spreadsheet_();
+  const sheet = spreadsheet.getSheetByName(name) || spreadsheet.insertSheet(name);
+  ensureHeaders_(sheet, name);
+  return sheet;
 }
 
 function writeSnapshot_(payload) {
@@ -173,8 +177,10 @@ function writeSnapshot_(payload) {
     ]));
   }
 
-  refreshDailyOverview_(payload.currentEventId || "01");
-  writeSystemCheck_();
+  if (isAdminSync || shouldAppendCheckinReplies) {
+    refreshDailyOverview_(payload.currentEventId || "01");
+    writeSystemCheck_();
+  }
 
   if (isAdminSync) {
     writeSheet_(SHEETS.mapping, [
@@ -512,7 +518,7 @@ function formatDateTimeValue_(value) {
 }
 
 function writeSheet_(name, rows) {
-  const sheet = spreadsheet_().getSheetByName(name);
+  const sheet = sheet_(name);
   sheet.clear();
   const values = [HEADERS[name]].concat(rows || []);
   sheet.getRange(1, 1, values.length, HEADERS[name].length).setValues(values);
@@ -520,18 +526,15 @@ function writeSheet_(name, rows) {
 }
 
 function appendUniqueRows_(name, rows, keyGetter) {
-  const sheet = spreadsheet_().getSheetByName(name);
-  ensureHeaders_(sheet, name);
+  const sheet = sheet_(name);
   const width = HEADERS[name].length;
   const existing = new Set();
   const lastRow = sheet.getLastRow();
-  const keptRows = [];
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, width).getValues().forEach(row => {
       const key = keyGetter(row);
       if (!key || existing.has(key)) return;
       existing.add(key);
-      keptRows.push(row);
     });
   }
   const fresh = (rows || []).filter(row => {
@@ -540,11 +543,11 @@ function appendUniqueRows_(name, rows, keyGetter) {
     existing.add(key);
     return true;
   });
-  const values = [HEADERS[name]].concat(keptRows, fresh);
-  sheet.clear();
-  sheet.getRange(1, 1, values.length, width).setValues(values);
+  if (fresh.length) {
+    sheet.getRange(lastRow + 1, 1, fresh.length, width).setValues(fresh);
+  }
   formatSheet_(sheet);
-  return { matched: (rows || []).length, added: fresh.length, kept: keptRows.length };
+  return { matched: (rows || []).length, added: fresh.length, kept: Math.max(lastRow - 1, 0) };
 }
 
 function writeSystemCheck_() {
