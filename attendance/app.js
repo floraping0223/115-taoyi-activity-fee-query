@@ -322,6 +322,10 @@ function mergeBackendSnapshot(payload, options = {}) {
   if (!payload?.ok) return false;
   let changed = false;
 
+  if (Array.isArray(payload.members) && payload.members.length) {
+    if (mergeBackendMembers(payload.members)) changed = true;
+  }
+
   if (Array.isArray(payload.events)) {
     const existingEvents = new Map(state.events.map((event) => [event.id, event]));
     payload.events.forEach((incoming) => {
@@ -424,6 +428,51 @@ function mergeBackendSnapshot(payload, options = {}) {
   }
 
   return changed;
+}
+
+function mergeBackendMembers(members) {
+  const roster = members
+    .filter((member) => member && member.id)
+    .map(normalizeBackendMember)
+    .filter((member) => normalize(member.squad) && normalize(member.sourceSquad));
+  if (!roster.length) return false;
+  const guests = (state.members || []).filter((member) => member.isGuest);
+  const nextMembers = [...roster, ...guests];
+  const nextVersion = rosterVersion(nextMembers);
+  if (rosterVersion(state.members || []) === nextVersion) return false;
+  state.members = nextMembers;
+  state.rosterVersion = nextVersion;
+  return true;
+}
+
+function normalizeBackendMember(member) {
+  return {
+    id: normalize(member.id),
+    familyId: normalize(member.familyId),
+    name: normalize(member.name),
+    role: member.role === "成人" ? "成人" : member.role === "孩子" ? "孩子" : normalize(member.role),
+    group: normalize(member.group),
+    squad: normalizeSquad(member.squad) || "未分隊",
+    sourceGroup: normalize(member.sourceGroup || member.group),
+    sourceSquad: normalize(member.sourceSquad || member.squad),
+    sourceAttribute: normalize(member.sourceAttribute || member.role),
+    eagleQualified: Boolean(member.eagleQualified),
+  };
+}
+
+function rosterVersion(members) {
+  return String(hash((members || []).map((member) => [
+    member.id,
+    member.familyId,
+    member.name,
+    member.role,
+    member.group,
+    member.squad,
+    member.sourceGroup,
+    member.sourceSquad,
+    member.sourceAttribute,
+    member.eagleQualified ? "1" : "0",
+  ].join(":")).join("|")));
 }
 
 function resetFamilyReplyRecords(eventId) {
@@ -1917,21 +1966,12 @@ function migrateState(saved) {
 function syncRosterFromSource(saved) {
   if (!Array.isArray(window.PEOPLE_DATA) || !window.PEOPLE_DATA.length) return false;
   const roster = buildMembers();
-  const rosterVersion = String(hash(roster.map((member) => [
-    member.id,
-    member.familyId,
-    member.name,
-    member.role,
-    member.group,
-    member.squad,
-    member.sourceGroup,
-    member.eagleQualified ? "1" : "0",
-  ].join(":")).join("|")));
-  if (saved.rosterVersion === rosterVersion) return false;
+  const nextRosterVersion = rosterVersion(roster);
+  if (saved.rosterVersion === nextRosterVersion) return false;
 
   const guests = (saved.members || []).filter((member) => member.isGuest);
   saved.members = [...roster, ...guests];
-  saved.rosterVersion = rosterVersion;
+  saved.rosterVersion = nextRosterVersion;
   return true;
 }
 

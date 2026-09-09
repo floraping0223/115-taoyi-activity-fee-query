@@ -217,6 +217,7 @@ function readBackendSnapshot_() {
     spreadsheetId: spreadsheet.getId(),
     spreadsheetUrl: spreadsheet.getUrl(),
     currentEventId: PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01",
+    members: readMembers_(),
     events: readEventSettings_(),
     familyReplies: readFamilyReplies_(),
     checkinReplies: readCheckinReplies_(),
