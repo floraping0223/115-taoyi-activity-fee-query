@@ -752,6 +752,7 @@ function resolveCheckinSquad_(member, record, events) {
   if (support) return support.squad;
   const group = resolveGroup_(member, record, events);
   if (group === "育成鷹團") return "育成鷹團";
+  if (group === "翔鷹" && member.squad === "鷹") return "鷹團";
   return member.squad || "";
 }
 
