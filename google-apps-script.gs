@@ -585,8 +585,8 @@ function appendUniqueRows_(name, rows, keyGetter, options) {
         duplicateCount += 1;
       } else {
         orderedKeys.push(key);
+        existing[key] = row;
       }
-      existing[key] = row;
     });
   }
   let replaced = 0;
@@ -605,7 +605,7 @@ function appendUniqueRows_(name, rows, keyGetter, options) {
     orderedKeys.push(key);
     fresh.push(row);
   });
-  if (duplicateCount > 0 || replaced > 0) {
+  if ((replaceExisting && duplicateCount > 0) || replaced > 0) {
     const values = orderedKeys.map(key => existing[key]);
     writeSheet_(name, values);
   } else if (fresh.length) {
