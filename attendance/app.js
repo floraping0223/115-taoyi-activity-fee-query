@@ -1049,9 +1049,11 @@ function renderCheckin() {
     return;
   }
 
-  const submission = checkinSubmission();
-  renderCheckinRecorderPanel(submission);
-  renderCheckinSubmitPanel(submission);
+  const confirmedSubmission = checkinSubmission();
+  const pendingSubmission = pendingCheckinSubmission();
+  const visibleSubmission = confirmedSubmission || pendingSubmission;
+  renderCheckinRecorderPanel(visibleSubmission);
+  renderCheckinSubmitPanel(visibleSubmission);
   syncGuestFields();
   const members = currentCheckinMembers();
 
@@ -1059,7 +1061,7 @@ function renderCheckin() {
     checkinList.innerHTML = `<div class="empty-note">這個入口目前沒有名單。若現場有人臨時出席，可直接在下方新增。</div>`;
     return;
   }
-  checkinList.replaceChildren(...members.map((member) => renderPersonCard(member, "checkin", { locked: Boolean(submission) })));
+  checkinList.replaceChildren(...members.map((member) => renderPersonCard(member, "checkin", { locked: Boolean(visibleSubmission) })));
 }
 
 function renderCheckinPeriodTabs() {
@@ -1166,11 +1168,13 @@ function renderCheckinSubmitPanel(submission) {
   }
   const periodText = checkinPeriodLabel(currentCheckinPeriod());
   if (submission) {
-    const needsRetry = submission.syncStatus !== "sent";
+    const isConfirmed = submission.syncStatus === "sent" && submission.backendConfirmed;
+    const needsRetry = !isConfirmed;
     checkinSubmitPanel.innerHTML = `
-      <div class="confirm-status"><strong>${activeSquad} ${periodText}已完成點名</strong><span>填寫人：${escapeHtml(submission.recorder)}｜${formatTime(submission.submittedAt)}｜${syncStatusText(submission)}</span></div>
-      <p class="confirm-help">${needsRetry ? "後端尚未確認收到，請在原本這台裝置按重新送後端。" : "表單填寫如需修改，請洽點名人員孔雀魚。"}</p>
+      <div class="confirm-status"><strong>${activeSquad} ${periodText}${isConfirmed ? "已完成點名" : "尚未確認送達"}</strong><span>填寫人：${escapeHtml(submission.recorder)}｜${formatTime(submission.submittedAt)}｜${syncStatusText(submission)}</span></div>
+      <p class="confirm-help">${needsRetry ? "這台裝置已保留剛剛的點名內容，但 Google 後端還沒有回傳確認；請按重新送後端。" : "表單填寫如需修改，請洽點名人員孔雀魚。"}</p>
       ${needsRetry ? '<button id="retryCheckinSync" type="button">重新送後端</button>' : ""}
+      ${needsRetry ? '<button id="resetPendingCheckin" type="button" class="secondary">取消暫存，重新填寫</button>' : ""}
     `;
     const retryButton = checkinSubmitPanel.querySelector("#retryCheckinSync");
     if (retryButton) {
@@ -1183,6 +1187,15 @@ function renderCheckinSubmitPanel(submission) {
           state.checkinSubmissions[key].syncStatus = synced ? "pending" : "failed";
           state.checkinSubmissions[key].syncedAt = synced ? state.checkinSubmissions[key].syncedAt || new Date().toISOString() : "";
         }
+        saveState();
+        render();
+      });
+    }
+    const resetButton = checkinSubmitPanel.querySelector("#resetPendingCheckin");
+    if (resetButton) {
+      resetButton.addEventListener("click", () => {
+        if (!confirm("確定取消這台裝置暫存的點名內容，重新填寫？這不會刪除 Google 後端既有資料。")) return;
+        delete state.checkinSubmissions[checkinSubmissionKey()];
         saveState();
         render();
       });
@@ -1306,7 +1319,7 @@ function namesText(members) {
 }
 
 function syncGuestFields() {
-  const disabled = Boolean(checkinSubmission()) || activeSquad === "全部";
+  const disabled = Boolean(checkinSubmission() || pendingCheckinSubmission()) || activeSquad === "全部";
   guestForm.querySelectorAll('input[name="guestMode"]').forEach((input) => {
     input.disabled = disabled;
   });
@@ -1806,6 +1819,14 @@ function checkinSubmission() {
   if (!submission) return null;
   if (submission.syncStatus === "sent" && submission.backendConfirmed) return submission;
   return null;
+}
+
+function pendingCheckinSubmission() {
+  if (activeSquad === "全部") return null;
+  const submission = state.checkinSubmissions?.[checkinSubmissionKey()] || null;
+  if (!submission) return null;
+  if (submission.syncStatus === "sent" && submission.backendConfirmed) return null;
+  return submission;
 }
 
 function loadState() {

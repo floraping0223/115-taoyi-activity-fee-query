@@ -13,6 +13,8 @@ const SHEETS = {
   missing: "待補資料",
 };
 
+const SPREADSHEET_ID = "1t52809HqGSPSdskrF-4-dJM7gMFPaTtc2u5aFNLxfP4";
+
 const HEADERS = {
   [SHEETS.members]: ["人員ID", "家庭編號", "自然名", "屬性", "分團", "小隊", "所屬分團", "育成鷹資格", "啟用", "備註"],
   [SHEETS.events]: ["場次", "活動日期", "活動名稱", "會前確認開放", "現場點名開放", "育成鷹團分流", "狀態", "備註"],
@@ -40,7 +42,7 @@ function doGet(e) {
   }
   setupWorkbook_();
   if (action === "setup") {
-    return text_("115桃一親子團全年出勤管理系統分頁已建立：" + SpreadsheetApp.getActiveSpreadsheet().getUrl());
+    return text_("115桃一親子團全年出勤管理系統分頁已建立：" + spreadsheet_().getUrl());
   }
   return text_("115桃一點名表後端已啟用。請由前台同步 Google。");
 }
@@ -51,12 +53,22 @@ function doPost(e) {
   if (payload.action !== "snapshot") {
     return json_({ ok: false, message: "Unsupported action" });
   }
-  writeSnapshot_(payload);
-  return json_({ ok: true, syncedAt: payload.syncedAt || new Date().toISOString() });
+  const result = writeSnapshot_(payload);
+  const spreadsheet = spreadsheet_();
+  return json_(Object.assign({
+    ok: true,
+    syncedAt: payload.syncedAt || new Date().toISOString(),
+    spreadsheetId: spreadsheet.getId(),
+    spreadsheetUrl: spreadsheet.getUrl(),
+  }, result));
+}
+
+function spreadsheet_() {
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
 function setupWorkbook_() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = spreadsheet_();
   Object.values(SHEETS).forEach(name => {
     const sheet = spreadsheet.getSheetByName(name) || spreadsheet.insertSheet(name);
     ensureHeaders_(sheet, name);
@@ -88,7 +100,7 @@ function writeSnapshot_(payload) {
   const shouldAppendFamilyReplies = payload.intent === "family";
   const shouldAppendCheckinReplies = payload.intent === "checkin";
 
-  appendUniqueRows_(SHEETS.pre, shouldAppendFamilyReplies ? records.filter(record => {
+  const familyAppend = appendUniqueRows_(SHEETS.pre, shouldAppendFamilyReplies ? records.filter(record => {
     const member = memberById[record.memberId] || {};
     return Boolean(familyConfirmations[familyConfirmKey_(record.eventId, member.familyId || "")]);
   }).map(record => {
@@ -98,7 +110,7 @@ function writeSnapshot_(payload) {
       record.expected || "", record.route || "", record.note || "", confirmation.submittedAt || payload.syncedAt || ""];
   }) : [], row => [row[0], row[1]].join("|"));
 
-  appendUniqueRows_(SHEETS.onsite, shouldAppendCheckinReplies ? records.filter(record => {
+  const checkinRows = shouldAppendCheckinReplies ? records.filter(record => {
     const member = memberById[record.memberId] || {};
     const group = resolveCheckinGroup_(member, record, payload.events || []);
     const squad = resolveCheckinSquad_(member, record, payload.events || []);
@@ -114,7 +126,8 @@ function writeSnapshot_(payload) {
     return [record.eventId, record.memberId, member.familyId || "", member.name || "", member.role || "",
       group, squad, record.status || "", yes_(record.am), yes_(record.pm), yes_(statusText === "遲到"), yes_(statusText === "下午遲到"),
       yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || "", checkinPeriodLabel_(period)];
-  }) : [], row => [row[0], row[1], row[16] || "上午"].join("|"));
+  }) : [];
+  const checkinAppend = appendUniqueRows_(SHEETS.onsite, checkinRows, row => [row[0], row[1], row[16] || "上午"].join("|"));
 
   if (isAdminSync) {
     writeSheet_(SHEETS.splits, (payload.events || []).map(event => [
@@ -134,7 +147,7 @@ function writeSnapshot_(payload) {
     writeSheet_(SHEETS.work, workRows);
   }
 
-  appendUniqueRows_(SHEETS.work, !isAdminSync && shouldAppendCheckinReplies ? records.filter(record => {
+  const workAppend = appendUniqueRows_(SHEETS.work, !isAdminSync && shouldAppendCheckinReplies ? records.filter(record => {
     if (!record.work && !record.workGroup && !record.workRole) return false;
     const member = memberById[record.memberId] || {};
     const group = resolveCheckinGroup_(member, record, payload.events || []);
@@ -172,11 +185,24 @@ function writeSnapshot_(payload) {
       ["所屬小隊", "小隊", "直接匯入", ""],
     ]);
   }
+  return {
+    intent: payload.intent || "",
+    recordsReceived: records.length,
+    familyRowsMatched: familyAppend.matched,
+    familyRowsAdded: familyAppend.added,
+    checkinRowsMatched: checkinAppend.matched,
+    checkinRowsAdded: checkinAppend.added,
+    workRowsAdded: workAppend.added,
+    checkinKeysReceived: Object.keys(checkinSubmissions),
+  };
 }
 
 function readBackendSnapshot_() {
+  const spreadsheet = spreadsheet_();
   return {
     ok: true,
+    spreadsheetId: spreadsheet.getId(),
+    spreadsheetUrl: spreadsheet.getUrl(),
     currentEventId: PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01",
     events: readEventSettings_(),
     familyReplies: readFamilyReplies_(),
@@ -185,7 +211,7 @@ function readBackendSnapshot_() {
 }
 
 function readEventSettings_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.events);
+  const sheet = spreadsheet_().getSheetByName(SHEETS.events);
   if (!sheet) return [];
   const rows = sheet.getLastRow() > 1
     ? sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.events].length).getValues()
@@ -201,7 +227,7 @@ function readEventSettings_() {
 }
 
 function readFamilyReplies_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.pre);
+  const sheet = spreadsheet_().getSheetByName(SHEETS.pre);
   if (!sheet) return [];
   if (sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.pre].length).getValues()
@@ -221,7 +247,7 @@ function readFamilyReplies_() {
 }
 
 function readCheckinReplies_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.onsite);
+  const sheet = spreadsheet_().getSheetByName(SHEETS.onsite);
   if (!sheet) return [];
   if (sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.onsite].length).getValues()
@@ -352,7 +378,7 @@ function overviewEntrances_(eagleSplit) {
 }
 
 function readMembers_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.members);
+  const sheet = spreadsheet_().getSheetByName(SHEETS.members);
   if (!sheet || sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.members].length).getValues()
     .map(row => ({
@@ -370,7 +396,7 @@ function readMembers_() {
 }
 
 function readWorkAssignments_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.work);
+  const sheet = spreadsheet_().getSheetByName(SHEETS.work);
   if (!sheet || sheet.getLastRow() <= 1) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS[SHEETS.work].length).getValues()
     .map(row => ({
@@ -486,7 +512,7 @@ function formatDateTimeValue_(value) {
 }
 
 function writeSheet_(name, rows) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = spreadsheet_().getSheetByName(name);
   sheet.clear();
   const values = [HEADERS[name]].concat(rows || []);
   sheet.getRange(1, 1, values.length, HEADERS[name].length).setValues(values);
@@ -494,7 +520,7 @@ function writeSheet_(name, rows) {
 }
 
 function appendUniqueRows_(name, rows, keyGetter) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = spreadsheet_().getSheetByName(name);
   ensureHeaders_(sheet, name);
   const width = HEADERS[name].length;
   const existing = new Set();
@@ -518,6 +544,7 @@ function appendUniqueRows_(name, rows, keyGetter) {
   sheet.clear();
   sheet.getRange(1, 1, values.length, width).setValues(values);
   formatSheet_(sheet);
+  return { matched: (rows || []).length, added: fresh.length, kept: keptRows.length };
 }
 
 function writeSystemCheck_() {
@@ -536,7 +563,7 @@ function writeSystemCheck_() {
 }
 
 function checkDuplicateRows_(name, keyGetter, label) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = spreadsheet_().getSheetByName(name);
   if (!sheet || sheet.getLastRow() <= 1) return [[name, label, "正常", "目前沒有重複資料。"]];
   const width = HEADERS[name].length;
   const counts = {};
@@ -551,7 +578,7 @@ function checkDuplicateRows_(name, keyGetter, label) {
 }
 
 function checkRequiredSheet_(name) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  const sheet = spreadsheet_().getSheetByName(name);
   if (!sheet) return [[name, "分頁存在", "異常", "找不到這張分頁。"]];
   const headers = sheet.getRange(1, 1, 1, HEADERS[name].length).getValues()[0];
   const mismatch = HEADERS[name].filter((header, index) => headers[index] !== header);
