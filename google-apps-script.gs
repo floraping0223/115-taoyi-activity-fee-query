@@ -107,16 +107,19 @@ function writeSnapshot_(payload) {
   const checkinSubmissions = payload.checkinSubmissions || {};
   const shouldAppendFamilyReplies = payload.intent === "family";
   const shouldAppendCheckinReplies = payload.intent === "checkin";
+  const existingFamilyReplyKeys = shouldAppendFamilyReplies ? existingReplyKeys_(SHEETS.pre, row => [row[0], row[2]].join("|")) : {};
 
   const familyAppend = appendUniqueRows_(SHEETS.pre, shouldAppendFamilyReplies ? records.filter(record => {
     const member = memberById[record.memberId] || {};
-    return Boolean(familyConfirmations[familyConfirmKey_(record.eventId, member.familyId || "")]);
+    const familyId = member.familyId || "";
+    return Boolean(familyConfirmations[familyConfirmKey_(record.eventId, familyId)])
+      && !Object.prototype.hasOwnProperty.call(existingFamilyReplyKeys, [record.eventId, familyId].join("|"));
   }).map(record => {
     const member = memberById[record.memberId] || {};
     const confirmation = familyConfirmations[familyConfirmKey_(record.eventId, member.familyId || "")] || {};
     return [record.eventId, record.memberId, member.familyId || "", member.name || "", member.role || "",
       record.expected || "", record.route || "", record.note || "", confirmation.submittedAt || payload.syncedAt || ""];
-  }) : [], row => [row[0], row[1]].join("|"));
+  }) : [], row => [row[0], row[1]].join("|"), { replaceExisting: false });
 
   const checkinRows = shouldAppendCheckinReplies ? records.filter(record => {
     const member = memberById[record.memberId] || {};
@@ -610,6 +613,19 @@ function appendUniqueRows_(name, rows, keyGetter, options) {
     formatSheet_(sheet);
   }
   return { matched: (rows || []).length, added: fresh.length, replaced, removedDuplicates: duplicateCount, kept: orderedKeys.length };
+}
+
+function existingReplyKeys_(name, keyGetter) {
+  const sheet = sheet_(name);
+  const width = HEADERS[name].length;
+  const keys = {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return keys;
+  sheet.getRange(2, 1, lastRow - 1, width).getValues().forEach(row => {
+    const key = keyGetter(row);
+    if (key && key !== "|") keys[key] = true;
+  });
+  return keys;
 }
 
 function cleanupDuplicateReplySheets_() {
