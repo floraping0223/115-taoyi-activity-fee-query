@@ -382,6 +382,10 @@ function mergeBackendSnapshot(payload, options = {}) {
     const replyPeriod = periodKeyFromLabel(reply.period, reply.group);
     if (replyPeriod === "full") {
       applySingleCheckinStatus(record, reply.status || "未確認");
+      if (mergeRecordField(record, "am", Boolean(reply.am))) changed = true;
+      if (mergeRecordField(record, "pm", Boolean(reply.pm))) changed = true;
+      if (mergeRecordField(record, "amLate", reply.status === "遲到")) changed = true;
+      if (mergeRecordField(record, "pmLate", reply.status === "下午遲到")) changed = true;
       if (mergeRecordField(record, "note", reply.note || record.note || "")) changed = true;
       changed = true;
     } else if (replyPeriod === "am") {
