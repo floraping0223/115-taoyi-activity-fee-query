@@ -45,12 +45,13 @@ function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
   const callback = e && e.parameter && e.parameter.callback;
   const appMode = e && e.parameter && e.parameter.appMode;
-  if (action === "events" || action === "snapshot") {
+  if (action === "snapshot") {
+    const payload = readBackendSnapshot_();
+    if (callback) return javascript_(callback, payload);
+    return json_(payload);
+  }
+  if (action === "events") {
     setupWorkbook_();
-    if (appMode !== "family") {
-      refreshDailyOverview_(PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01");
-      refreshAnnual_();
-    }
     const payload = readBackendSnapshot_();
     if (callback) return javascript_(callback, payload);
     return json_(payload);
