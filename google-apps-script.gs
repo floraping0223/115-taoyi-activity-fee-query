@@ -440,12 +440,7 @@ function annualCell_(value) {
 }
 
 function annualEventIds_(events) {
-  const ids = (events || []).map(event => String(event.id || "").padStart(2, "0")).filter(Boolean);
-  for (let index = 1; index <= 12; index += 1) {
-    const id = String(index).padStart(2, "0");
-    if (ids.indexOf(id) < 0) ids.push(id);
-  }
-  return ids.slice(0, 12);
+  return Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
 }
 
 function recordsForEvents_(eventIds, members) {
