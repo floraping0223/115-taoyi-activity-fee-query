@@ -2,6 +2,7 @@ const STORAGE_KEY = "taoyi-115-attendance-ui-v1";
 const SCRIPT_URL_KEY = "taoyi-115-apps-script-url";
 const APP_MODE = document.body.dataset.appMode || "admin";
 const DEFAULT_SCRIPT_URL = window.TAOYI_BACKEND_URL || "";
+const BACKEND_READ_TIMEOUT_MS = 9000;
 
 const SQUADS = {
   "小蟻": ["小黑蟻", "小黃蟻", "小綠蟻", "小紅蟻", "小蟻團團隊"],
@@ -53,6 +54,7 @@ let activeEntrance = "小蟻";
 let activeSquad = "全部";
 let activeCheckinPeriod = "am";
 let backendSnapshotLoaded = false;
+let lastBackendReadError = "";
 
 const eventSelect = document.querySelector("#eventSelect");
 const publicEventSelect = document.querySelector("#publicEventSelect");
@@ -280,14 +282,16 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       script.remove();
     };
     const timer = setTimeout(() => {
+      lastBackendReadError = "讀取逾時，請確認 Apps Script 部署存取權限為「任何人」。";
       cleanup();
       resolve(false);
-    }, 30000);
+    }, BACKEND_READ_TIMEOUT_MS);
     window[callbackName] = (payload) => {
       clearTimeout(timer);
       const isOk = Boolean(payload?.ok);
       const wasLoaded = backendSnapshotLoaded;
       if (isOk) backendSnapshotLoaded = true;
+      lastBackendReadError = isOk ? "" : "後端回傳格式不正確，請重新部署 Apps Script。";
       const changed = mergeBackendSnapshot(payload, options);
       if (changed) {
         syncEventOptions();
@@ -311,12 +315,14 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       script.src = endpoint.toString();
       script.onerror = () => {
         clearTimeout(timer);
+        lastBackendReadError = "讀取失敗，請確認 Apps Script 部署存取權限為「任何人」。";
         cleanup();
         resolve(false);
       };
       document.body.appendChild(script);
     } catch (error) {
       clearTimeout(timer);
+      lastBackendReadError = "Apps Script URL 格式不正確。";
       cleanup();
       resolve(false);
     }
@@ -626,6 +632,7 @@ async function refreshBackendReplies() {
   try {
     const loaded = await loadBackendSnapshotFromGoogle();
     refreshReplies.textContent = loaded ? "已更新" : "讀取失敗";
+    if (!loaded && lastBackendReadError) alert(lastBackendReadError);
   } finally {
     setTimeout(() => {
       refreshReplies.disabled = false;
