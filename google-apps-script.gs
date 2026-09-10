@@ -546,6 +546,12 @@ function updateAnnualCounts_(counts, status) {
   if (status === "公假") counts.publicLeave += 1;
 }
 
+function normalizePartialLeaveStatus_(status) {
+  if (status === "上午出席") return "下午請假";
+  if (status === "下午出席") return "上午請假";
+  return status;
+}
+
 const SQUADS_ = {
   "小蟻": ["小黑蟻", "小黃蟻", "小綠蟻", "小紅蟻", "小蟻團團隊"],
   "炫蜂": ["泥壺蜂", "虎頭蜂", "長腳蜂", "細腰蜂", "炫蜂團團隊"],
