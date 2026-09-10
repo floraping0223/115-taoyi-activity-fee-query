@@ -1778,6 +1778,7 @@ function updateAnnualCounts(counts, status) {
 
 function annualStatus(record) {
   const status = normalizePartialLeaveStatus(record.status);
+  const flags = { am: Boolean(record.am) || Boolean(record.amLate), pm: Boolean(record.pm) || Boolean(record.pmLate) };
   if (status && status !== "未確認") {
     const periods = attendancePeriods(record);
     if (periods.am && !periods.pm) return "下午請假";
@@ -1785,6 +1786,9 @@ function annualStatus(record) {
     if (periods.am && periods.pm && status === "上午實到") return "出席";
     return status;
   }
+  if (flags.am && flags.pm) return "出席";
+  if (flags.am && !flags.pm) return "下午請假";
+  if (!flags.am && flags.pm) return "上午請假";
   const expected = normalizePartialLeaveStatus(record.expected);
   if (["請假", "上午請假", "下午請假", "公假"].includes(expected)) return expected;
   return "未確認";

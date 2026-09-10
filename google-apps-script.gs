@@ -519,14 +519,19 @@ function readRuleWeights_() {
 
 function annualStatus_(record) {
   const status = normalizePartialLeaveStatus_(record.status || "");
+  const am = hasMorningFlag_(record);
+  const pm = hasAfternoonFlag_(record);
   if (status && status !== "未確認") {
-    const am = hasMorning_(record);
-    const pm = hasAfternoon_(record);
-    if (am && !pm) return "下午請假";
-    if (!am && pm) return "上午請假";
-    if (am && pm && status === "上午實到") return "出席";
+    const amPresent = hasMorning_(record);
+    const pmPresent = hasAfternoon_(record);
+    if (amPresent && !pmPresent) return "下午請假";
+    if (!amPresent && pmPresent) return "上午請假";
+    if (amPresent && pmPresent && status === "上午實到") return "出席";
     return status;
   }
+  if (am && pm) return "出席";
+  if (am && !pm) return "下午請假";
+  if (!am && pm) return "上午請假";
   const expected = normalizePartialLeaveStatus_(record.expected || "");
   if (["請假", "上午請假", "下午請假", "公假"].indexOf(expected) >= 0) return expected;
   return "未確認";
@@ -716,6 +721,14 @@ function hasMorning_(record) {
 
 function hasAfternoon_(record) {
   return Boolean(record.pm) || record.status === "出席" || record.status === "全天出席" || record.status === "下午遲到" || record.status === "上午請假";
+}
+
+function hasMorningFlag_(record) {
+  return Boolean(record.am) || Boolean(record.amLate);
+}
+
+function hasAfternoonFlag_(record) {
+  return Boolean(record.pm) || Boolean(record.pmLate);
 }
 
 function isGuestMember_(member) {
