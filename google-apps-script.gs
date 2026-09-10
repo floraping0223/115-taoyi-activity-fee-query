@@ -514,6 +514,8 @@ function readRuleWeights_() {
 
 function annualStatus_(record) {
   const status = normalizePartialLeaveStatus_(record.status || "");
+  const expected = normalizePartialLeaveStatus_(record.expected || "");
+  if (expected === "公假") return "公假";
   const am = hasMorningFlag_(record);
   const pm = hasAfternoonFlag_(record);
   if (status && status !== "未確認") {
@@ -527,7 +529,6 @@ function annualStatus_(record) {
   if (am && pm) return "出席";
   if (am && !pm) return "下午請假";
   if (!am && pm) return "上午請假";
-  const expected = normalizePartialLeaveStatus_(record.expected || "");
   if (["請假", "上午請假", "下午請假", "公假"].indexOf(expected) >= 0) return expected;
   return "未確認";
 }
