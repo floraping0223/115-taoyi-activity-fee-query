@@ -329,6 +329,21 @@ function loadBackendSnapshotFromGoogle(options = {}) {
   });
 }
 
+function triggerBackendSummaryRebuild() {
+  if (APP_MODE === "family") return;
+  const url = normalize(DEFAULT_SCRIPT_URL || scriptUrl.value);
+  if (!url) return;
+  try {
+    const endpoint = new URL(url);
+    endpoint.searchParams.set("action", "rebuildSummaries");
+    endpoint.searchParams.set("appMode", APP_MODE);
+    endpoint.searchParams.set("ts", String(Date.now()));
+    fetch(endpoint.toString(), { method: "GET", mode: "no-cors", cache: "no-store" }).catch(() => {});
+  } catch (error) {
+    // Best-effort background refresh only.
+  }
+}
+
 function mergeBackendSnapshot(payload, options = {}) {
   if (!payload?.ok) return false;
   let changed = false;
@@ -631,6 +646,7 @@ async function refreshBackendReplies() {
   refreshReplies.disabled = true;
   try {
     const loaded = await loadBackendSnapshotFromGoogle();
+    if (loaded) triggerBackendSummaryRebuild();
     refreshReplies.textContent = loaded ? "已更新" : "讀取失敗";
     if (!loaded && lastBackendReadError) alert(lastBackendReadError);
   } finally {

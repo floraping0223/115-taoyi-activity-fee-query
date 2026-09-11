@@ -56,6 +56,16 @@ function doGet(e) {
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
+  if (action === "rebuildSummaries") {
+    setupWorkbook_();
+    const eventId = PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
+    refreshDailyOverview_(eventId);
+    refreshAnnual_();
+    writeSystemCheck_();
+    const result = { ok: true, rebuiltAt: new Date().toISOString(), currentEventId: eventId };
+    if (callback) return javascript_(callback, result);
+    return json_(result);
+  }
   setupWorkbook_();
   if (action === "cleanup") {
     const result = cleanupDuplicateReplySheets_();
