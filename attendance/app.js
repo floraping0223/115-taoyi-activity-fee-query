@@ -2172,8 +2172,8 @@ function hasAfternoon(record) {
 
 function attendancePeriods(record) {
   const status = normalizePartialLeaveStatus(record.status);
-  if (record.am || record.pm || record.amLate || record.pmLate) return { am: Boolean(record.am), pm: Boolean(record.pm) };
   if (["出席", "全天出席", "遲到"].includes(status)) return { am: true, pm: true };
+  if (record.am || record.pm || record.amLate || record.pmLate) return { am: Boolean(record.am), pm: Boolean(record.pm) };
   if (status === "上午實到") return { am: true, pm: false };
   if (status === "下午13:00實到" || status === "下午遲到") return { am: false, pm: true };
   if (isAfternoonLeave(status)) return { am: true, pm: false };
