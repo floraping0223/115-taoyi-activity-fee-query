@@ -243,6 +243,7 @@ function readBackendSnapshot_() {
     events: readEventSettings_(),
     familyReplies: readFamilyReplies_(),
     checkinReplies: readCheckinReplies_(),
+    workAssignments: readWorkAssignments_(),
   };
 }
 

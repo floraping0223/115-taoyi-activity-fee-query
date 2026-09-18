@@ -400,6 +400,20 @@ function mergeBackendSnapshot(payload, options = {}) {
     }
   });
 
+  if (Array.isArray(payload.workAssignments)) {
+    if (resetWorkAssignmentRecords(snapshotEventId)) changed = true;
+    payload.workAssignments
+      .filter((work) => normalize(work.eventId) === snapshotEventId)
+      .forEach((work) => {
+        const member = state.members.find((item) => item.id === work.memberId);
+        if (!member) return;
+        const record = getRecord(work.memberId, work.eventId);
+        if (mergeRecordField(record, "workGroup", normalize(work.workGroup))) changed = true;
+        if (mergeRecordField(record, "workRole", normalize(work.workRole))) changed = true;
+        if (mergeRecordField(record, "work", normalize(work.work))) changed = true;
+      });
+  }
+
   const backendCheckinKeys = new Set();
   (payload.checkinReplies || []).forEach((reply) => {
     const member = state.members.find((item) => item.id === reply.memberId);
@@ -512,6 +526,20 @@ function resetFamilyReplyRecords(eventId) {
     if (mergeRecordField(record, "expected", "未確認")) changed = true;
     if (mergeRecordField(record, "route", "")) changed = true;
     if (mergeRecordField(record, "note", "")) changed = true;
+  });
+  return changed;
+}
+
+function resetWorkAssignmentRecords(eventId) {
+  let changed = false;
+  Object.values(state.records || {}).forEach((record) => {
+    if (record.eventId !== eventId) return;
+    if (record.workGroup || record.workRole || record.work) {
+      record.workGroup = "";
+      record.workRole = "";
+      record.work = "";
+      changed = true;
+    }
   });
   return changed;
 }
@@ -1975,12 +2003,27 @@ function pendingCheckinSubmission() {
 }
 
 function loadState() {
+  if (APP_MODE !== "family") {
+    let recorderDrafts = {};
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      recorderDrafts = saved?.checkinRecorderDrafts || {};
+    } catch (error) {
+      recorderDrafts = {};
+    }
+    return freshState({ checkinRecorderDrafts: recorderDrafts });
+  }
+
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
     if (saved?.members?.length && saved?.events?.length) return migrateState(saved);
   } catch (error) {
     // Use fresh state when browser data is not readable.
   }
+  return freshState();
+}
+
+function freshState(overrides = {}) {
   return {
     currentEventId: "01",
     events: buildEvents(),
@@ -1990,6 +2033,7 @@ function loadState() {
     checkinSubmissions: {},
     checkinRecorderDrafts: {},
     rules: { ...DEFAULT_RULES },
+    ...overrides,
   };
 }
 
