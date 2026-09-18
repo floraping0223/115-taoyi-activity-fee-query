@@ -120,7 +120,7 @@ function setup() {
   syncPublicEventSelector();
   scriptUrl.value = DEFAULT_SCRIPT_URL || localStorage.getItem(SCRIPT_URL_KEY) || "";
   syncEventFields();
-  loadBackendSnapshotFromGoogle();
+  loadBackendSnapshotFromGoogle().then(() => render());
 
   eventSelect.addEventListener("change", () => {
     state.currentEventId = eventSelect.value;
@@ -839,6 +839,10 @@ function buildAnnualRows() {
 function render() {
   openState.textContent = `第 ${currentEvent().id} 場`;
   syncPublicEventSelector();
+  if (backendRequiredButNotReady()) {
+    renderBackendLoading();
+    return;
+  }
   renderFamilyEventSummary();
   renderMetrics();
   renderAlerts();
@@ -848,6 +852,27 @@ function render() {
   if (activeView === "expected") renderExpectedLists();
   if (activeView === "checkin") renderCheckin();
   if (activeView === "annual") renderAnnual();
+}
+
+function backendRequiredButNotReady() {
+  return APP_MODE !== "family" && !backendSnapshotLoaded;
+}
+
+function renderBackendLoading() {
+  const message = lastBackendReadError || "正在讀取 Google 後端資料，請稍候。";
+  renderFamilyEventSummary();
+  if (metricGrid) metricGrid.innerHTML = `<article class="metric-card"><span>資料狀態</span><strong>${escapeHtml(lastBackendReadError ? "讀取失敗" : "讀取中")}</strong></article>`;
+  if (familyAlerts) familyAlerts.innerHTML = `<div class="empty-note">${escapeHtml(message)}</div>`;
+  if (overviewGroups) overviewGroups.innerHTML = `<div class="empty-note">${escapeHtml(message)}</div>`;
+  if (preReplyLists) preReplyLists.innerHTML = `<div class="empty-note">${escapeHtml(message)}</div>`;
+  if (expectedLists) expectedLists.innerHTML = `<div class="empty-note">${escapeHtml(message)}</div>`;
+  if (boardTitle) boardTitle.textContent = entranceLabel(activeEntrance);
+  if (squadTabs) squadTabs.replaceChildren();
+  if (checkinPeriodTabs) checkinPeriodTabs.replaceChildren();
+  if (checkinRecorderPanel) checkinRecorderPanel.innerHTML = "";
+  if (checkinSubmitPanel) checkinSubmitPanel.innerHTML = "";
+  if (checkinList) checkinList.innerHTML = `<div class="empty-note">${escapeHtml(message)}</div>`;
+  if (annualList) annualList.innerHTML = `<div class="empty-note">${escapeHtml(message)}</div>`;
 }
 
 function renderFamilyEventSummary() {
