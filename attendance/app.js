@@ -54,6 +54,8 @@ let activeEntrance = "小蟻";
 let activeSquad = "全部";
 let activeCheckinPeriod = "am";
 let backendSnapshotLoaded = false;
+let backendSnapshotScope = "";
+let annualSnapshotLoading = false;
 let lastBackendReadError = "";
 
 const eventSelect = document.querySelector("#eventSelect");
@@ -64,6 +66,7 @@ const eventName = document.querySelector("#eventName");
 const eagleSplit = document.querySelector("#eagleSplit");
 const preOpen = document.querySelector("#preOpen");
 const onsiteOpen = document.querySelector("#onsiteOpen");
+const annualOpen = document.querySelector("#annualOpen");
 const scriptUrl = document.querySelector("#scriptUrl");
 const syncGoogle = document.querySelector("#syncGoogle");
 const refreshReplies = document.querySelector("#refreshReplies");
@@ -168,6 +171,13 @@ function setup() {
     saveState();
     render();
   });
+  if (annualOpen) {
+    annualOpen.addEventListener("change", () => {
+      currentEvent().annualOpen = annualOpen.checked;
+      saveState();
+      render();
+    });
+  }
   scriptUrl.addEventListener("change", () => {
     localStorage.setItem(SCRIPT_URL_KEY, normalize(scriptUrl.value));
   });
@@ -193,7 +203,9 @@ function setup() {
 
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", () => {
-      activeView = button.dataset.view;
+      const nextView = button.dataset.view;
+      if (nextView === "annual" && !isAnnualOpen()) return;
+      activeView = nextView;
       document.querySelectorAll(".tab-button").forEach((item) => item.classList.toggle("is-active", item === button));
       document.querySelectorAll(".view").forEach((view) => view.classList.toggle("is-active", view.id === `${activeView}View`));
       render();
@@ -274,6 +286,7 @@ function syncPublicEventSelector() {
 function loadBackendSnapshotFromGoogle(options = {}) {
   const url = normalize(DEFAULT_SCRIPT_URL || scriptUrl.value);
   if (!url) return Promise.resolve(false);
+  const scope = options.scope || (activeView === "annual" ? "all" : "current");
   const callbackName = `taoyiSnapshot${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const script = document.createElement("script");
   return new Promise((resolve) => {
@@ -290,7 +303,10 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       clearTimeout(timer);
       const isOk = Boolean(payload?.ok);
       const wasLoaded = backendSnapshotLoaded;
-      if (isOk) backendSnapshotLoaded = true;
+      if (isOk) {
+        backendSnapshotLoaded = true;
+        backendSnapshotScope = payload.scope || scope;
+      }
       lastBackendReadError = isOk ? "" : "後端回傳格式不正確，請重新部署 Apps Script。";
       const changed = mergeBackendSnapshot(payload, options);
       if (changed) {
@@ -311,6 +327,8 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       endpoint.searchParams.set("action", "snapshot");
       endpoint.searchParams.set("callback", callbackName);
       endpoint.searchParams.set("appMode", APP_MODE);
+      endpoint.searchParams.set("scope", scope);
+      if (options.refresh) endpoint.searchParams.set("refresh", "1");
       endpoint.searchParams.set("ts", String(Date.now()));
       script.src = endpoint.toString();
       script.onerror = () => {
@@ -357,7 +375,7 @@ function mergeBackendSnapshot(payload, options = {}) {
     payload.events.forEach((incoming) => {
       const event = existingEvents.get(normalize(incoming.id));
       if (!event) return;
-      ["date", "name", "preOpen", "onsiteOpen", "eagleSplit"].forEach((key) => {
+      ["date", "name", "preOpen", "onsiteOpen", "eagleSplit", "annualOpen"].forEach((key) => {
         if (Object.prototype.hasOwnProperty.call(incoming, key) && event[key] !== incoming[key]) {
           event[key] = incoming[key];
           changed = true;
@@ -372,9 +390,15 @@ function mergeBackendSnapshot(payload, options = {}) {
   }
 
   const snapshotEventId = normalize(payload.currentEventId || state.currentEventId);
-  if (!options.preserveLocalPending && snapshotEventId) {
-    if (resetFamilyReplyRecords(snapshotEventId)) changed = true;
-    if (resetCheckinReplyRecords(snapshotEventId)) changed = true;
+  const snapshotScope = payload.scope === "all" ? "all" : "current";
+  const snapshotEventIds = snapshotScope === "all"
+    ? state.events.map((event) => normalize(event.id)).filter(Boolean)
+    : [snapshotEventId].filter(Boolean);
+  if (!options.preserveLocalPending) {
+    snapshotEventIds.forEach((eventId) => {
+      if (resetFamilyReplyRecords(eventId)) changed = true;
+      if (resetCheckinReplyRecords(eventId)) changed = true;
+    });
   }
 
   const backendFamilyKeys = new Set();
@@ -401,9 +425,10 @@ function mergeBackendSnapshot(payload, options = {}) {
   });
 
   if (Array.isArray(payload.workAssignments)) {
-    if (resetWorkAssignmentRecords(snapshotEventId)) changed = true;
+    snapshotEventIds.forEach((eventId) => {
+      if (resetWorkAssignmentRecords(eventId)) changed = true;
+    });
     payload.workAssignments
-      .filter((work) => normalize(work.eventId) === snapshotEventId)
       .forEach((work) => {
         const member = state.members.find((item) => item.id === work.memberId);
         if (!member) return;
@@ -467,8 +492,10 @@ function mergeBackendSnapshot(payload, options = {}) {
   });
 
   if (!options.preserveLocalPending) {
-    if (reconcileConfirmationsWithBackend(snapshotEventId, backendFamilyKeys)) changed = true;
-    if (reconcileCheckinsWithBackend(snapshotEventId, backendCheckinKeys)) changed = true;
+    snapshotEventIds.forEach((eventId) => {
+      if (reconcileConfirmationsWithBackend(eventId, backendFamilyKeys)) changed = true;
+      if (reconcileCheckinsWithBackend(eventId, backendCheckinKeys)) changed = true;
+    });
   }
 
   return changed;
@@ -673,7 +700,7 @@ async function refreshBackendReplies() {
   refreshReplies.textContent = "讀取中";
   refreshReplies.disabled = true;
   try {
-    const loaded = await loadBackendSnapshotFromGoogle();
+    const loaded = await loadBackendSnapshotFromGoogle({ refresh: true });
     if (loaded) triggerBackendSummaryRebuild();
     refreshReplies.textContent = loaded ? "已更新" : "讀取失敗";
     if (!loaded && lastBackendReadError) alert(lastBackendReadError);
@@ -839,6 +866,7 @@ function buildAnnualRows() {
 function render() {
   openState.textContent = `第 ${currentEvent().id} 場`;
   syncPublicEventSelector();
+  syncAnnualAccess();
   if (backendRequiredButNotReady()) {
     renderBackendLoading();
     return;
@@ -902,7 +930,32 @@ function syncEventFields() {
   eagleSplit.checked = event.eagleSplit;
   preOpen.checked = event.preOpen;
   onsiteOpen.checked = event.onsiteOpen;
+  if (annualOpen) annualOpen.checked = isAnnualOpen();
   syncRuleFields();
+}
+
+function isAnnualOpen() {
+  return Boolean(currentEvent().annualOpen);
+}
+
+function syncAnnualAccess() {
+  const open = isAnnualOpen();
+  document.querySelectorAll('.tab-button[data-view="annual"]').forEach((button) => {
+    button.hidden = !open;
+    button.disabled = !open;
+    if (!open) button.classList.remove("is-active");
+  });
+  const annualView = document.querySelector("#annualView");
+  if (annualView && !open) annualView.classList.remove("is-active");
+  if (activeView === "annual" && !open) {
+    activeView = APP_MODE === "checkin" ? "checkin" : "overview";
+    document.querySelectorAll(".tab-button").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.view === activeView);
+    });
+    document.querySelectorAll(".view").forEach((view) => {
+      view.classList.toggle("is-active", view.id === `${activeView}View`);
+    });
+  }
 }
 
 function syncRuleFields() {
@@ -1641,6 +1694,25 @@ function renderPersonCard(member, mode, options = {}) {
 }
 
 function renderAnnual() {
+  if (!isAnnualOpen()) {
+    annualList.innerHTML = `<div class="empty-note">全年總表尚未開放查閱。</div>`;
+    return;
+  }
+  if (APP_MODE !== "family" && backendSnapshotScope !== "all") {
+    annualList.innerHTML = `<div class="empty-note">正在讀取全年總表資料，請稍候。</div>`;
+    if (!annualSnapshotLoading) {
+      annualSnapshotLoading = true;
+      loadBackendSnapshotFromGoogle({ scope: "all" }).then((loaded) => {
+        annualSnapshotLoading = false;
+        if (loaded) {
+          renderAnnual();
+        } else {
+          annualList.innerHTML = `<div class="empty-note">${escapeHtml(lastBackendReadError || "全年總表資料讀取失敗，請稍後再試。")}</div>`;
+        }
+      });
+    }
+    return;
+  }
   const term = normalize(annualSearch.value).toLowerCase();
   const children = state.members
     .filter(isAnnualChild)
@@ -2070,6 +2142,7 @@ function migrateState(saved) {
   saved.events.forEach((event) => {
     if (!Object.prototype.hasOwnProperty.call(event, "preOpen")) event.preOpen = true;
     if (!Object.prototype.hasOwnProperty.call(event, "onsiteOpen")) event.onsiteOpen = true;
+    if (!Object.prototype.hasOwnProperty.call(event, "annualOpen")) event.annualOpen = false;
   });
   const rosterChanged = syncRosterFromSource(saved);
   saved.members.forEach((member) => {
@@ -2133,6 +2206,7 @@ function buildEvents() {
       eagleSplit: number === "02",
       preOpen: true,
       onsiteOpen: true,
+      annualOpen: false,
     };
   });
 }

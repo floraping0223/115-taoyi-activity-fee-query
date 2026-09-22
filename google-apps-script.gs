@@ -14,6 +14,11 @@ const SHEETS = {
 };
 
 const SPREADSHEET_ID = "1t52809HqGSPSdskrF-4-dJM7gMFPaTtc2u5aFNLxfP4";
+const SNAPSHOT_CACHE_PREFIX_ = "taoyiBackendSnapshotV4";
+const SNAPSHOT_CACHE_SECONDS_ = 30;
+const SNAPSHOT_CACHE_CHUNK_SIZE_ = 80000;
+
+let SPREADSHEET_;
 
 const DEFAULT_RULE_WEIGHTS_ = {
   "出席": 0,
@@ -28,7 +33,7 @@ const DEFAULT_RULE_WEIGHTS_ = {
 
 const HEADERS = {
   [SHEETS.members]: ["人員ID", "家庭編號", "自然名", "屬性", "分團", "小隊", "所屬分團", "育成鷹資格", "啟用", "備註"],
-  [SHEETS.events]: ["場次", "活動日期", "活動名稱", "會前確認開放", "現場點名開放", "育成鷹團分流", "狀態", "備註"],
+  [SHEETS.events]: ["場次", "活動日期", "活動名稱", "會前確認開放", "現場點名開放", "育成鷹團分流", "全年總表開放", "狀態", "備註"],
   [SHEETS.pre]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "預計時段", "活動去向", "請假事由", "回覆時間"],
   [SHEETS.onsite]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "主要點名群組", "小隊", "現場狀態", "上午實到", "下午13:00實到", "遲到", "下午遲到", "臨時出席", "備註", "點名人員", "更新時間", "點名時段"],
   [SHEETS.splits]: ["場次", "分流名稱", "啟用", "資格規則", "主要點名群組", "備註"],
@@ -45,14 +50,18 @@ function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
   const callback = e && e.parameter && e.parameter.callback;
   const appMode = e && e.parameter && e.parameter.appMode;
+  const scope = e && e.parameter && e.parameter.scope === "all" ? "all" : "current";
+  const refresh = e && e.parameter && e.parameter.refresh === "1";
   if (action === "snapshot") {
-    const payload = readBackendSnapshot_();
+    const payload = readCachedBackendSnapshot_(scope, refresh);
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
   if (action === "events") {
     setupWorkbook_();
-    const payload = readBackendSnapshot_();
+    clearBackendSnapshotCache_();
+    const payload = readBackendSnapshot_(scope);
+    cacheBackendSnapshot_(payload);
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
@@ -62,6 +71,7 @@ function doGet(e) {
     refreshDailyOverview_(eventId);
     refreshAnnual_();
     writeSystemCheck_();
+    clearBackendSnapshotCache_();
     const result = { ok: true, rebuiltAt: new Date().toISOString(), currentEventId: eventId };
     if (callback) return javascript_(callback, result);
     return json_(result);
@@ -72,6 +82,7 @@ function doGet(e) {
     refreshDailyOverview_(PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01");
     refreshAnnual_();
     writeSystemCheck_();
+    clearBackendSnapshotCache_();
     if (callback) return javascript_(callback, result);
     return json_(result);
   }
@@ -87,6 +98,7 @@ function doPost(e) {
     return json_({ ok: false, message: "Unsupported action" });
   }
   const result = writeSnapshot_(payload);
+  clearBackendSnapshotCache_();
   const spreadsheet = spreadsheet_();
   return json_(Object.assign({
     ok: true,
@@ -97,7 +109,8 @@ function doPost(e) {
 }
 
 function spreadsheet_() {
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (!SPREADSHEET_) SPREADSHEET_ = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return SPREADSHEET_;
 }
 
 function setupWorkbook_() {
@@ -123,7 +136,7 @@ function writeSnapshot_(payload) {
 
     writeSheet_(SHEETS.events, (payload.events || []).map(event => [
       event.id, event.date || "", event.name || "", yes_(event.preOpen), yes_(event.onsiteOpen),
-      yes_(event.eagleSplit), event.preOpen || event.onsiteOpen ? "開放" : "尚未開放", "",
+      yes_(event.eagleSplit), yes_(event.annualOpen), event.preOpen || event.onsiteOpen || event.annualOpen ? "開放" : "尚未開放", "",
     ]));
   }
 
@@ -232,19 +245,90 @@ function writeSnapshot_(payload) {
   };
 }
 
-function readBackendSnapshot_() {
+function readBackendSnapshot_(scope) {
   const spreadsheet = spreadsheet_();
+  const currentEventId = PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
+  const snapshotScope = scope === "all" ? "all" : "current";
+  const familyReplies = readFamilyReplies_();
+  const checkinReplies = readCheckinReplies_();
+  const workAssignments = readWorkAssignments_();
   return {
     ok: true,
+    scope: snapshotScope,
     spreadsheetId: spreadsheet.getId(),
     spreadsheetUrl: spreadsheet.getUrl(),
-    currentEventId: PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01",
+    currentEventId: currentEventId,
     members: readMembers_(),
     events: readEventSettings_(),
-    familyReplies: readFamilyReplies_(),
-    checkinReplies: readCheckinReplies_(),
-    workAssignments: readWorkAssignments_(),
+    familyReplies: filterSnapshotRowsByScope_(familyReplies, snapshotScope, currentEventId),
+    checkinReplies: filterSnapshotRowsByScope_(checkinReplies, snapshotScope, currentEventId),
+    workAssignments: filterSnapshotRowsByScope_(workAssignments, snapshotScope, currentEventId),
   };
+}
+
+function filterSnapshotRowsByScope_(rows, scope, currentEventId) {
+  if (scope === "all") return rows;
+  return (rows || []).filter(row => row.eventId === currentEventId);
+}
+
+function readCachedBackendSnapshot_(scope, refresh) {
+  const currentEventId = PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
+  const cacheKey = backendSnapshotCacheKey_(scope, currentEventId);
+  const cached = refresh ? null : readSnapshotCache_(cacheKey);
+  if (cached) return cached;
+  const payload = readBackendSnapshot_(scope);
+  cacheBackendSnapshot_(payload);
+  return payload;
+}
+
+function backendSnapshotCacheKey_(scope, currentEventId) {
+  return [SNAPSHOT_CACHE_PREFIX_, scope === "all" ? "all" : "current", currentEventId || "01"].join(":");
+}
+
+function readSnapshotCache_(cacheKey) {
+  const cache = CacheService.getScriptCache();
+  const metaRaw = cache.get(cacheKey + ":meta");
+  if (!metaRaw) return null;
+  try {
+    const meta = JSON.parse(metaRaw);
+    const keys = Array.from({ length: meta.count || 0 }, (_, index) => cacheKey + ":chunk:" + index);
+    const chunks = cache.getAll(keys);
+    if (keys.some(key => !chunks[key])) return null;
+    return JSON.parse(keys.map(key => chunks[key]).join(""));
+  } catch (error) {
+    return null;
+  }
+}
+
+function cacheBackendSnapshot_(payload) {
+  try {
+    const currentEventId = payload.currentEventId || "01";
+    const cacheKey = backendSnapshotCacheKey_(payload.scope || "current", currentEventId);
+    const json = JSON.stringify(payload);
+    const chunks = {};
+    const count = Math.ceil(json.length / SNAPSHOT_CACHE_CHUNK_SIZE_);
+    for (let index = 0; index < count; index += 1) {
+      chunks[cacheKey + ":chunk:" + index] = json.slice(index * SNAPSHOT_CACHE_CHUNK_SIZE_, (index + 1) * SNAPSHOT_CACHE_CHUNK_SIZE_);
+    }
+    CacheService.getScriptCache().putAll(chunks, SNAPSHOT_CACHE_SECONDS_);
+    CacheService.getScriptCache().put(cacheKey + ":meta", JSON.stringify({ count, cachedAt: new Date().toISOString() }), SNAPSHOT_CACHE_SECONDS_);
+  } catch (error) {
+    // Cache is an optimization only.
+  }
+}
+
+function clearBackendSnapshotCache_() {
+  const cache = CacheService.getScriptCache();
+  const eventIds = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
+  const keys = [];
+  ["current", "all"].forEach(scope => {
+    eventIds.forEach(eventId => {
+      const cacheKey = backendSnapshotCacheKey_(scope, eventId);
+      keys.push(cacheKey + ":meta");
+      for (let index = 0; index < 20; index += 1) keys.push(cacheKey + ":chunk:" + index);
+    });
+  });
+  cache.removeAll(keys);
 }
 
 function readEventSettings_() {
@@ -260,6 +344,7 @@ function readEventSettings_() {
     preOpen: row[3] === "是" || row[3] === true,
     onsiteOpen: row[4] === "是" || row[4] === true,
     eagleSplit: row[5] === "是" || row[5] === true,
+    annualOpen: row[6] === "是" || row[6] === true,
   })).filter(event => event.id);
 }
 
