@@ -2,7 +2,7 @@ const STORAGE_KEY = "taoyi-115-attendance-ui-v1";
 const SCRIPT_URL_KEY = "taoyi-115-apps-script-url";
 const APP_MODE = document.body.dataset.appMode || "admin";
 const DEFAULT_SCRIPT_URL = window.TAOYI_BACKEND_URL || "";
-const BACKEND_READ_TIMEOUT_MS = 9000;
+const BACKEND_READ_TIMEOUT_MS = 30000;
 
 const SQUADS = {
   "小蟻": ["小黑蟻", "小黃蟻", "小綠蟻", "小紅蟻", "小蟻團團隊"],
@@ -282,7 +282,7 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       script.remove();
     };
     const timer = setTimeout(() => {
-      lastBackendReadError = "讀取逾時，請確認 Apps Script 部署存取權限為「任何人」。";
+      lastBackendReadError = "Google 後端讀取逾時，請稍後再按「重新讀取回覆」。若持續發生，請確認 Apps Script 已重新部署。";
       cleanup();
       resolve(false);
     }, BACKEND_READ_TIMEOUT_MS);
@@ -315,7 +315,7 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       script.src = endpoint.toString();
       script.onerror = () => {
         clearTimeout(timer);
-        lastBackendReadError = "讀取失敗，請確認 Apps Script 部署存取權限為「任何人」。";
+        lastBackendReadError = "Google 後端讀取失敗，請確認 Apps Script 部署網址可用且存取權限為「任何人」。";
         cleanup();
         resolve(false);
       };
