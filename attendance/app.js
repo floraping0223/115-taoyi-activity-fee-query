@@ -328,7 +328,7 @@ function loadBackendSnapshotFromGoogle(options = {}) {
       endpoint.searchParams.set("callback", callbackName);
       endpoint.searchParams.set("appMode", APP_MODE);
       endpoint.searchParams.set("scope", scope);
-      endpoint.searchParams.set("eventId", state.currentEventId);
+      if (APP_MODE === "admin") endpoint.searchParams.set("eventId", state.currentEventId);
       if (options.refresh) endpoint.searchParams.set("refresh", "1");
       endpoint.searchParams.set("ts", String(Date.now()));
       script.src = endpoint.toString();
@@ -356,7 +356,7 @@ function triggerBackendSummaryRebuild() {
     const endpoint = new URL(url);
     endpoint.searchParams.set("action", "rebuildSummaries");
     endpoint.searchParams.set("appMode", APP_MODE);
-    endpoint.searchParams.set("eventId", state.currentEventId);
+    if (APP_MODE === "admin") endpoint.searchParams.set("eventId", state.currentEventId);
     endpoint.searchParams.set("ts", String(Date.now()));
     fetch(endpoint.toString(), { method: "GET", mode: "no-cors", cache: "no-store" }).catch(() => {});
   } catch (error) {
