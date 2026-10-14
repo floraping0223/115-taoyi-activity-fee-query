@@ -52,22 +52,23 @@ function doGet(e) {
   const appMode = e && e.parameter && e.parameter.appMode;
   const scope = e && e.parameter && e.parameter.scope === "all" ? "all" : "current";
   const refresh = e && e.parameter && e.parameter.refresh === "1";
+  const requestedEventId = normalizeEventId_(e && e.parameter && e.parameter.eventId);
   if (action === "snapshot") {
-    const payload = readCachedBackendSnapshot_(scope, refresh);
+    const payload = readCachedBackendSnapshot_(scope, refresh, requestedEventId);
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
   if (action === "events") {
     setupWorkbook_();
     clearBackendSnapshotCache_();
-    const payload = readBackendSnapshot_(scope);
+    const payload = readBackendSnapshot_(scope, requestedEventId);
     cacheBackendSnapshot_(payload);
     if (callback) return javascript_(callback, payload);
     return json_(payload);
   }
   if (action === "rebuildSummaries") {
     setupWorkbook_();
-    const eventId = PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
+    const eventId = requestedEventId || PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
     refreshDailyOverview_(eventId);
     refreshAnnual_();
     writeSystemCheck_();
@@ -245,9 +246,9 @@ function writeSnapshot_(payload) {
   };
 }
 
-function readBackendSnapshot_(scope) {
+function readBackendSnapshot_(scope, requestedEventId) {
   const spreadsheet = spreadsheet_();
-  const currentEventId = PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
+  const currentEventId = requestedEventId || PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
   const snapshotScope = scope === "all" ? "all" : "current";
   const familyReplies = readFamilyReplies_();
   const checkinReplies = readCheckinReplies_();
@@ -271,12 +272,12 @@ function filterSnapshotRowsByScope_(rows, scope, currentEventId) {
   return (rows || []).filter(row => row.eventId === currentEventId);
 }
 
-function readCachedBackendSnapshot_(scope, refresh) {
-  const currentEventId = PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
+function readCachedBackendSnapshot_(scope, refresh, requestedEventId) {
+  const currentEventId = requestedEventId || PropertiesService.getDocumentProperties().getProperty("currentEventId") || "01";
   const cacheKey = backendSnapshotCacheKey_(scope, currentEventId);
   const cached = refresh ? null : readSnapshotCache_(cacheKey);
   if (cached) return cached;
-  const payload = readBackendSnapshot_(scope);
+  const payload = readBackendSnapshot_(scope, currentEventId);
   cacheBackendSnapshot_(payload);
   return payload;
 }
@@ -1061,6 +1062,14 @@ function isEagleSoloRoute_(route) {
 
 function yes_(value) {
   return value ? "是" : "否";
+}
+
+function normalizeEventId_(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const number = Number(text);
+  if (!isFinite(number) || number < 1) return "";
+  return String(Math.floor(number)).padStart(2, "0");
 }
 
 function formatSheet_(sheet) {
