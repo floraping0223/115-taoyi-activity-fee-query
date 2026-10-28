@@ -1,0 +1,31 @@
+const {chromium} = require('playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe'});
+ const page=await browser.newPage({viewport:{width:1280,height:900}});
+ const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('file:///C:/Users/USER/Documents/528/index.html');
+ await page.locator('#reporter').fill('測試填表人'); await page.locator('#familyId').fill('45'); await page.locator('#loadFamily').click();
+ const count=await page.locator('.member-card').count(); assert(count>=2);
+ for(const select of await page.locator('[data-field=plan]').all())await select.selectOption('full');
+ assert((await page.locator('#summary').innerText()).includes('2,000'));
+ await page.locator('[name=portrait][value=yes]').check(); assert(await page.locator('#consentFiles').isVisible());
+ await page.locator('[name=portrait][value=no]').check(); assert(!(await page.locator('#consentFiles').isVisible()));
+ await page.locator('[data-field=plan]').first().selectOption('day1'); assert(await page.locator('[data-field=note]').first().getAttribute('required')!==null);
+ assert(!(await page.locator('[data-field=noBreakfast]').first().isVisible()));
+ await page.locator('[data-field=note]').first().fill('20:00');
+ await page.locator('[data-field=plan]').first().selectOption('full');
+ await page.locator('#confirmed').check();
+ const dl=page.waitForEvent('download'); await page.locator('button[type=submit]').click(); const download=await dl; assert(download.suggestedFilename().includes('45'));
+ await page.screenshot({path:'survey-desktop.png',fullPage:true});
+ await page.locator('#familyId').fill('62'); assert.equal(await page.locator('.member-card').count(),0); await page.locator('#loadFamily').click();
+ for(const select of await page.locator('[data-field=plan]').all())await select.selectOption('leave');
+ const summary=await page.locator('#summary').innerText(); assert(summary.includes('1,000')); assert(summary.includes('500'));
+ await page.locator('#familyId').fill('44');await page.locator('#loadFamily').click();assert.equal(await page.locator('#tents').inputValue(),'1');
+ await page.setViewportSize({width:390,height:844});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+ await page.screenshot({path:'survey-mobile.png',fullPage:true});
+ assert.deepEqual(errors,[]); console.log('瀏覽器檢查通過：家庭帶入、同意書顯示、時間必填、下載、切換家庭清空、家庭62、預設帳位、手機無橫向溢出。');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
+
