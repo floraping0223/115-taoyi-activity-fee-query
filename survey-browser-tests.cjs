@@ -5,7 +5,7 @@ const assert=require('node:assert/strict');
  const page=await browser.newPage({viewport:{width:1280,height:900}});
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
  await page.goto('file:///C:/Users/USER/Documents/528/index.html');
- await page.locator('#reporter').fill('測試填表人'); await page.locator('#reporterEmail').fill('test@example.com'); assert(await page.locator('#sendEmailButton').isDisabled()); await page.locator('#familyId').fill('45'); await page.locator('#loadFamily').click();
+ await page.locator('#reporter').fill('測試填表人'); await page.locator('#reporterEmail').fill('test@example.com'); assert.equal(await page.locator('#sendEmailButton').isDisabled(), await page.evaluate(()=>!window.SURVEY_CONFIG.backendUrl)); await page.locator('#familyId').fill('45'); await page.locator('#loadFamily').click();
  const count=await page.locator('.member-card').count(); assert(count>=2);
  for(const select of await page.locator('[data-field=plan]').all())await select.selectOption('full');
  assert((await page.locator('#summary').innerText()).includes('2,000'));
@@ -28,4 +28,5 @@ const assert=require('node:assert/strict');
  assert.deepEqual(errors,[]); console.log('瀏覽器檢查通過：家庭帶入、同意書顯示、時間必填、下載、切換家庭清空、家庭62、預設帳位、手機無橫向溢出。');
  await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
+
 
