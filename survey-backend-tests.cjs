@@ -17,3 +17,6 @@ t=run({portrait:'no',attachment:null});assert(t.res.includes('"ok":true'));asser
 t=run({portrait:'no',attachment:null},null,true);assert(t.res.includes('"emailSent":false'));assert.equal(t.writes.length,2);
 t=run({action:'capabilities',confirmed:false});assert(t.res.includes('"version":2'));assert(t.res.includes('"ok":true'));assert.equal(t.writes.length,0);
 console.log('通過：每家庭限一次、必填驗證、同意書必附、拒絕者免附、固定帳位、自動年費、服務版本驗證。');
+
+t=run({action:'familyStatus',confirmed:false},{familyId:'45',requestId:'previous',email:'test@example.com'});assert(t.res.includes('"submitted":true'));assert.equal(t.writes.length,0);assert.equal(t.mails.length,0);
+t=run({action:'familyStatus',confirmed:false});assert(t.res.includes('"submitted":false'));assert.equal(t.writes.length,0);console.log('家庭狀態查詢通過：已填／未填回覆正確，查詢不寫入資料也不寄信。');

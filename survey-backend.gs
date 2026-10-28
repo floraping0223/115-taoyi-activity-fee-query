@@ -46,7 +46,13 @@ function doPost(e) {
     if (!e.parameter.payload || e.parameter.payload.length>14500000) throw new Error('資料格式錯誤');
     const p=JSON.parse(e.parameter.payload);nonce=cleanText_(p.requestId,80);
     if (!/^[a-zA-Z0-9-]+$/.test(nonce)) throw new Error('收件編號錯誤');
-    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true});
+    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyStatusSupported:true});
+    if(p.action==='familyStatus'){
+      const id=cleanText_(p.familyId,8);if(!/^[1-9][0-9]*$/.test(id))throw new Error('家庭編號錯誤');
+      const sheet=SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('家庭總表');
+      const ids=sheet.getRange(2,1,Math.max(sheet.getLastRow()-1,1),1).getValues().flat();
+      return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyId:id,submitted:ids.some(value=>String(Number(value))===id)});
+    }
     if(p.confirmed!==true)throw new Error('請確認所有家庭成員與費用明細');
     const family=cleanText_(p.familyId,8);if(!/^[1-9][0-9]*$/.test(family)) throw new Error('家庭編號錯誤');
     const reporter=cleanText_(p.reporter,50);

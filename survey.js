@@ -8,6 +8,9 @@
   let family = '';
   let members = [];
   let nextId = 1;
+  let familyStatusKnown=false;
+  let familyRequest=0;
+  let submittedFamily='';
   const normalize = s => /^\d+$/.test(s.trim()) && Number(s) > 0 && Number.isSafeInteger(Number(s)) ? String(Number(s)) : '';
   function newMember(name = '', kind = '') {
     return {id: nextId++, name, kind, plan:'', note:'', noDinner:false, noBreakfast:false, noStay:false};
@@ -46,10 +49,21 @@
     members.forEach(m => updateCard($(`[data-id="${m.id}"]`), m));
     updateSummary();
   }
-  function loadFamily() {
+  async function loadFamily() {
     const id = normalize($('#familyId').value);
     if (!id) { $('#familyStatus').textContent = '請輸入有效的家庭編號數字。'; $('#familyId').focus(); return; }
-    if (family === id && members.length) { $('#familyStatus').textContent = `目前填寫家庭 ${id}，已保留你的選項。`; return; }
+    const current=++familyRequest;
+    familyStatusKnown=false;$('#sendEmailButton').disabled=true;$('#loadFamily').disabled=true;
+    $('#familyStatus').style.color='';$('#familyStatus').textContent='正在查詢此家庭是否已填寫…';
+    try{
+      const status=await queryFamilyStatus(id);
+      if(current!==familyRequest||normalize($('#familyId').value)!==id)return;
+      familyStatusKnown=true;submittedFamily=status.submitted?id:'';
+      $('#sendEmailButton').disabled=!backendReady||status.submitted;
+      if(status.submitted){family=id;members=[];$('#tents').value='0';$('#confirmed').checked=false;renderMembers();$('#familyStatus').style.color='#c62828';$('#familyStatus').textContent='此家庭已填寫，請勿重複輸入。若需修改請洽明鏡，待整筆刪除後再重新填寫。';return;}
+    }catch{if(current===familyRequest){$('#familyStatus').textContent='暫時無法確認填寫狀態，請稍後再按「帶入成員」。若持續發生，請洽明鏡確認收件程式已更新部署。';}return;}
+    finally{if(current===familyRequest)$('#loadFamily').disabled=false;}
+    if (family === id && members.length) { $('#familyStatus').textContent='此家庭尚未填寫，已保留你的選項。';return; }
     family = id;
     $('#familyId').value = id;
     const seen = new Set();
@@ -64,14 +78,16 @@
   }
   $('#loadFamily').addEventListener('click', loadFamily);
   $('#familyId').addEventListener('input', () => {
+    familyRequest++;familyStatusKnown=false;submittedFamily='';$('#loadFamily').disabled=false;$('#sendEmailButton').disabled=true;$('#familyStatus').style.color='';
     if (normalize($('#familyId').value) !== family) {
       family = ''; members = []; $('#tents').value = '0'; $('#confirmed').checked = false;
       $('#familyStatus').textContent = '家庭編號已變更，請按「帶入成員」重新確認名冊。';
       $('#uploadFilename').textContent = ''; renderMembers();
     }
   });
-  $('#addMember').addEventListener('click', () => {
-    if (!family) loadFamily();
+  $('#addMember').addEventListener('click', async () => {
+    if (!familyStatusKnown) await loadFamily();
+    if(!familyStatusKnown || submittedFamily===family)return;
     if (!family) return;
     members.push(newMember()); $('#confirmed').checked = false; renderMembers();
     $('#members').lastElementChild.querySelector('input').focus();
@@ -107,6 +123,17 @@
     if (element.tagName === 'A') { element.href = url.href; element.target = '_blank'; element.rel = 'noopener'; } else element.className = 'pending';
     $('#documentLinks').append(element);
   });
+  function queryFamilyStatus(id){
+    return new Promise((resolve,reject)=>{
+      const nonce=crypto.randomUUID(),iframe=document.createElement('iframe'),form=document.createElement('form'),field=document.createElement('input');
+      iframe.name='family-status-'+nonce;iframe.hidden=true;document.body.append(iframe);form.hidden=true;form.method='POST';form.action=config.backendUrl;form.target=iframe.name;
+      field.name='payload';field.value=JSON.stringify({action:'familyStatus',requestId:nonce,familyId:id});form.append(field);document.body.append(form);
+      let timer;const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',receive);iframe.remove();form.remove();};
+      const receive=e=>{let origin;try{origin=new URL(e.origin);}catch{return;}if(!(origin.hostname==='script.google.com'||origin.hostname.endsWith('.googleusercontent.com')))return;
+        if(e.data?.requestId!==nonce)return;cleanup();if(e.data.ok&&e.data.familyId===id&&typeof e.data.submitted==='boolean')resolve(e.data);else reject(Error('無法查詢'));};
+      window.addEventListener('message',receive);timer=setTimeout(()=>{cleanup();reject(Error('查詢逾時'));},25000);form.submit();
+    });
+  }
   let lastSubmission = null;
   let backendReady = false;
   let submitted = false;
@@ -122,7 +149,7 @@
     const form=document.createElement('form'); form.method='POST'; form.action=endpoint; form.target=iframe.name; form.hidden=true;
     const field=document.createElement('input'); field.name='payload';field.value=JSON.stringify(p);form.append(field);document.body.append(form);
     let timer;
-    const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',received);button.disabled=submitted || !backendReady;form.remove();iframe.remove();};
+    const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',received);button.disabled=submitted || !backendReady || !familyStatusKnown || submittedFamily===family;form.remove();iframe.remove();};
     const received=event=>{
       let origin;try{origin=new URL(event.origin);}catch{return;}
       if (!(origin.hostname === 'script.google.com' || origin.hostname.endsWith('.googleusercontent.com')))return;
@@ -145,7 +172,7 @@
     const finish=()=>{clearTimeout(checkTimer);window.removeEventListener('message',check);form.remove();frame.remove();};
     const check=e=>{let origin;try{origin=new URL(e.origin);}catch{return;}if(!(origin.hostname==='script.google.com'||origin.hostname.endsWith('.googleusercontent.com')))return;
       if(e.data?.requestId!==nonce)return;
-      backendReady=e.data.ok===true&&e.data.version>=2;finish();$('#sendEmailButton').disabled=!backendReady;
+      backendReady=e.data.ok===true&&e.data.version>=2;finish();$('#sendEmailButton').disabled=!backendReady||!familyStatusKnown||submittedFamily===family;
       $('#saveStatus').textContent=backendReady?'每個家庭編號限送出一次。必填資料完整，且同意者已選擇簽署檔案後，才能送出。':'收件服務待更新，暫停送出。主辦單位需將最新版收件程式更新部署。';
     };
     window.addEventListener('message',check);checkTimer=setTimeout(()=>{finish();$('#saveStatus').textContent='無法確認收件服務，請稍後重新整理。';},30000);form.submit();
@@ -154,6 +181,7 @@
   $('#surveyForm').addEventListener('submit', async event => {
     const downloadOnly=event.submitter?.id === 'downloadBackup';
     event.preventDefault();
+    if(!downloadOnly && (!familyStatusKnown||submittedFamily===family)){ $('#saveStatus').textContent=submittedFamily===family?'此家庭已填寫，請勿重複輸入。':'請先按「帶入成員」確認家庭填寫狀態。';return; }
     if(!downloadOnly && (submitted || !backendReady)){ $('#saveStatus').textContent=submitted?'本家庭已送出，請勿重複填寫。':'收件服務尚未就緒，請稍後再試。'; return; }
     if(!$('#surveyForm').reportValidity())return;
     if (!family || normalize($('#familyId').value) !== family) { $('#saveStatus').textContent = '請先按「帶入成員」確認家庭編號。'; $('#loadFamily').focus(); return; }
