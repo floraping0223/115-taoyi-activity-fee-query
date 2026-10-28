@@ -18,6 +18,12 @@ function nextDataRow_(sheet) {
  for(let i=ids.length-1;i>=0;i--)if(String(ids[i][0]).trim())return i+3;
  return 2;
 }
+function sortReplies_(familySheet,memberSheet){
+  const familyCount=nextDataRow_(familySheet)-2;
+  const memberCount=nextDataRow_(memberSheet)-2;
+  if(familyCount>1)familySheet.getRange(2,1,familyCount,16).sort({column:1,ascending:true});
+  if(memberCount>1)memberSheet.getRange(2,1,memberCount,12).sort({column:2,ascending:true});
+}
 function mailReceipt_(sheet,row,nonce,email,family,reporter,portrait,members,r,tents) {
   const status=sheet.getRange(row,16).getValue();
   if(status==='已寄送')return {type:'surveyReceipt',requestId:nonce,ok:true,emailSent:true};
@@ -74,13 +80,16 @@ function doPost(e) {
       const upload=validatedUpload_(p.attachment);
       uploadUrl=DriveApp.getFolderById(UPLOAD_FOLDER_ID).createFile(Utilities.newBlob(upload.bytes,upload.mime,family+upload.extension)).getUrl();
     }
-    const rows=r.people.map(m=>[nonce,family,cellText_(m.name),{child:'各團團員（小孩）',adult:'成人／非團員',free:'大班以下（免費）'}[m.kind],SurveyRules.plans.find(x=>x.id===m.plan).label,m.noDinner?'是':'否',m.noBreakfast?'是':'否',m.noStay?'是':'否',cellText_(m.note),m.fees.camp,m.fees.joining,m.fees.total]);
+    const rows=r.people.map(m=>[nonce,Number(family),cellText_(m.name),{child:'各團團員（小孩）',adult:'成人／非團員',free:'大班以下（免費）'}[m.kind],SurveyRules.plans.find(x=>x.id===m.plan).label,m.noDinner?'是':'否',m.noBreakfast?'是':'否',m.noStay?'是':'否',cellText_(m.note),m.fees.camp,m.fees.joining,m.fees.total]);
     // 同一收件編號重試時不重複寫入成員。
     const existing=d.getRange(2,1,Math.max(d.getLastRow()-1,1),1).getValues().flat();
     if(!existing.includes(nonce))d.getRange(nextDataRow_(d),1,rows.length,12).setValues(rows);
     const receiptRow=nextDataRow_(f);
-    f.getRange(receiptRow,1,1,16).setValues([[family,cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意',p.hasMembership?'有會員編號':'無會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
-    SpreadsheetApp.flush();return reply_(mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents));
+    f.getRange(receiptRow,1,1,16).setValues([[Number(family),cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意',p.hasMembership?'有會員編號':'無會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
+    SpreadsheetApp.flush();
+    const response=mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents);
+    sortReplies_(f,d);
+    return reply_(response);
   }catch(error){return reply_({type:'surveyReceipt',requestId:nonce,ok:false,message:String(error.message||'收件失敗')});}
   finally{if(lock.hasLock())lock.releaseLock();}
 }
