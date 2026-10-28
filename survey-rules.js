@@ -1,7 +1,7 @@
 (function (root) {
   const plans = [
     { id: 'full', label: '正常出席', detail: '含晚餐、住宿、早餐', child: 250, adult: 450, dinner: true, breakfast: true, overnight: true },
-    { id: 'day1', label: '第一天出席', detail: '13:00–20:30｜含晚餐、不住宿；請備註離校時間', child: 100, adult: 300, dinner: true, breakfast: false, overnight: false },
+    { id: 'day1', label: '第一天出席', detail: '13:00–20:30｜含晚餐、不住宿（不含車宿）；請備註離校時間', child: 100, adult: 300, dinner: true, breakfast: false, overnight: false },
     { id: 'day2', label: '第二天出席', detail: '06:00–11:30｜含早餐；請備註到校時間', child: 50, adult: 250, dinner: false, breakfast: true, overnight: false },
     { id: 'late', label: '第一天晚到、第二天出席', detail: '含晚餐、住宿、早餐；第二天 06:00–11:30，務必備註第一天到校時間', child: 250, adult: 450, dinner: true, breakfast: true, overnight: true },
     { id: 'leave', label: '請假', detail: '不收宿營活動費；入團費及家庭年費另計', child: 0, adult: 0, dinner: false, breakfast: false, overnight: false }

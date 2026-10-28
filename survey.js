@@ -34,7 +34,7 @@
     card.querySelector('.member-total').textContent = `活動費 ${money(fees.camp)} ＋ 入團費 ${money(fees.joining)} ＝ 小計 ${money(fees.total)}`;
   }
   function renderMembers() {
-    $('#members').innerHTML = members.map(m => `<article class="member-card" data-id="${m.id}"><div class="member-head"><strong class="member-title"></strong><button class="remove" type="button" data-remove="${m.id}">移除此成員</button></div><div class="member-fields"><label>自然名<input data-field="name" value="${escape(m.name)}" maxlength="50" required></label><label>收費身分<select data-field="kind" required><option value="">請確認身分</option>${Object.entries(kinds).map(([k,v]) => `<option value="${k}" ${m.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label class="plan-field">出席方式<select data-field="plan" required><option value="">請選擇出席方式</option>${rules.plans.map(p => `<option value="${p.id}" ${m.plan === p.id ? 'selected' : ''}>${p.label}${m.kind === 'free' ? '（免費）' : `（團員 $${p.child}／成人 $${p.adult}）`}</option>`).join('')}</select></label></div><p class="plan-detail"></p><div class="adjustments"><label class="check-row"><input type="checkbox" data-field="noDinner" ${m.noDinner ? 'checked' : ''}>不用晚餐 −$100</label><label class="check-row"><input type="checkbox" data-field="noBreakfast" ${m.noBreakfast ? 'checked' : ''}>不用早餐 −$50</label><label class="check-row"><input type="checkbox" data-field="noStay" ${m.noStay ? 'checked' : ''}>不住宿 −$100</label></div><div class="member-fields"><label class="plan-field"><span class="note-label"></span><input data-field="note" value="${escape(m.note)}" maxlength="200" placeholder="請填寫時間或其他補充說明"></label></div><p class="member-total"></p></article>`).join('');
+    $('#members').innerHTML = members.map(m => `<article class="member-card" data-id="${m.id}"><div class="member-head"><strong class="member-title"></strong><button class="remove" type="button" data-remove="${m.id}">移除此成員</button></div><div class="member-fields"><label>自然名<input data-field="name" value="${escape(m.name)}" maxlength="50" required></label><label>收費身分<select data-field="kind" required><option value="">請確認身分</option>${Object.entries(kinds).map(([k,v]) => `<option value="${k}" ${m.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label><label class="plan-field">出席方式<select data-field="plan" required><option value="">請選擇出席方式</option>${rules.plans.map(p => `<option value="${p.id}" ${m.plan === p.id ? 'selected' : ''}>${p.label}${m.kind === 'free' ? '（免費）' : `（團員 $${p.child}／成人 $${p.adult}）`}</option>`).join('')}</select></label></div><p class="plan-detail"></p><div class="adjustments"><label class="check-row"><input type="checkbox" data-field="noDinner" ${m.noDinner ? 'checked' : ''}>不用晚餐 −$100</label><label class="check-row"><input type="checkbox" data-field="noBreakfast" ${m.noBreakfast ? 'checked' : ''}>不用早餐 −$50</label><label class="check-row"><input type="checkbox" data-field="noStay" ${m.noStay ? 'checked' : ''}>不住宿（不含車宿）−$100</label></div><div class="member-fields"><label class="plan-field"><span class="note-label"></span><input data-field="note" value="${escape(m.note)}" maxlength="200" placeholder="請填寫時間或其他補充說明"></label></div><p class="member-total"></p></article>`).join('');
     members.forEach(m => updateCard($(`[data-id="${m.id}"]`), m));
     updateSummary();
   }
@@ -104,7 +104,7 @@
     const encoded = JSON.stringify(p);
     if (!lastSubmission || lastSubmission.encoded !== encoded) lastSubmission = {encoded, requestId:crypto.randomUUID()};
     p.requestId = lastSubmission.requestId;
-    const button = $('#surveyForm button[type=submit]'); button.disabled = true;
+    const button = $('#sendEmailButton'); button.disabled = true;
     $('#saveStatus').textContent = '正在送交主辦單位，請保持此頁開啟。';
     const iframe=document.createElement('iframe'); iframe.name='receipt-'+p.requestId; iframe.hidden=true; document.body.append(iframe);
     const form=document.createElement('form'); form.method='POST'; form.action=endpoint; form.target=iframe.name; form.hidden=true;
@@ -115,15 +115,16 @@
       let origin;try{origin=new URL(event.origin);}catch{return;}
       if (!(origin.hostname === 'script.google.com' || origin.hostname.endsWith('.googleusercontent.com')))return;
       const reply=event.data;if(reply?.type!=='surveyReceipt'||reply.requestId!==p.requestId)return;
-      cleanup();$('#saveStatus').textContent=reply.ok?'已送出成功，收件編號：'+p.requestId:'收件失敗：'+(reply.message||'請稍後再試');
+      cleanup();$('#saveStatus').textContent=reply.ok?(reply.emailSent?'已送出，填寫紀錄已寄至 '+p.email+'。收件編號：'+p.requestId:'調查已收件，但 Email 寄送失敗；請確認信箱後重試。收件編號：'+p.requestId):'收件失敗：'+(reply.message||'請稍後再試');
     };
     window.addEventListener('message',received);
     timer=setTimeout(()=>{cleanup();$('#saveStatus').textContent='尚未確認送達，請稍後重新送出，系統會沿用收件編號避免重複。';},45000);
     form.submit();
   }
   if(config.backendUrl){
-    $('#surveyForm button[type=submit]').textContent='送出調查並下載副本';
-    $('#saveStatus').textContent='確認明細後送出，系統顯示收件編號才代表送交成功。';
+    $('#sendEmailButton').disabled=false;
+    $('#sendEmailButton').textContent='送出並寄送填寫紀錄';
+    $('#saveStatus').textContent='送出後，填寫紀錄將寄至上方 Email。請確認信箱正確，並留意垃圾郵件匣。';
     if(!config.portraitUploadUrl)config.portraitUploadUrl=config.backendUrl;
   }
   $('#surveyForm').addEventListener('submit', event => {
@@ -135,11 +136,14 @@
     if (new Set(names).size !== names.length) { $('#saveStatus').textContent = '家庭成員自然名重複，請確認名冊。'; return; }
     const r = result();
     const portrait = document.querySelector('[name=portrait]:checked')?.value;
-    const lines = ['115年11月入團儀典宿營調查',`填表人自然名：${$('#reporter').value.trim()}`,`家庭編號：${family}`,`肖像權授權：${portrait === 'yes' ? '我同意' : '我不同意'}`,'',...r.people.flatMap(m => [`${m.name.trim()}｜${kinds[m.kind]}｜${rules.plans.find(p => p.id === m.plan).label}`,`  活動費 ${money(m.fees.camp)}／入團費 ${money(m.fees.joining)}／小計 ${money(m.fees.total)}`,`  餐宿調整：${[m.noDinner && '不用晚餐', m.noBreakfast && '不用早餐', m.noStay && '不住宿'].filter(Boolean).join('、') || '依方案'}`,`  備註：${m.note.trim() || '無'}`]),'',`活動費合計：${money(r.camp)}`,`入團費合計：${money(r.joining)}`,`116年家庭會員年費：${money(r.annual)}`,`露營帳位：${$('#tents').value} 帳，${money(r.tentFee)}`,`家庭應繳總額：${money(r.total)}`,'','此檔案為填寫結果留存，尚未送交主辦單位。'];
-    const blob = new Blob(['\ufeff'+lines.join('\r\n')], {type:'text/plain;charset=utf-8'});
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `115年11月宿營調查_家庭${family}.txt`; a.click(); setTimeout(() => URL.revokeObjectURL(url),10000);
-    $('#saveStatus').textContent = '已下載填寫結果。尚未設定雲端收件，請依主辦單位通知繳交。';
-    if(config.backendUrl)sendToCloud({familyId:family,reporter:$('#reporter').value.trim(),portrait,members,hasMembership:$('#hasMembership').checked,tents:Number($('#tents').value)});
+    const lines = ['115年11月入團儀典宿營調查',`填表人自然名：${$('#reporter').value.trim()}`,`填寫者 Email：${$('#reporterEmail').value.trim()}`,`家庭編號：${family}`,`肖像權授權：${portrait === 'yes' ? '我同意' : '我不同意'}`,'',...r.people.flatMap(m => [`${m.name.trim()}｜${kinds[m.kind]}｜${rules.plans.find(p => p.id === m.plan).label}`,`  活動費 ${money(m.fees.camp)}／入團費 ${money(m.fees.joining)}／小計 ${money(m.fees.total)}`,`  餐宿調整：${[m.noDinner && '不用晚餐', m.noBreakfast && '不用早餐', m.noStay && '不住宿（不含車宿）'].filter(Boolean).join('、') || '依方案'}`,`  備註：${m.note.trim() || '無'}`]),'',`活動費合計：${money(r.camp)}`,`入團費合計：${money(r.joining)}`,`116年家庭會員年費：${money(r.annual)}`,`露營帳位：${$('#tents').value} 帳，${money(r.tentFee)}`,`家庭應繳總額：${money(r.total)}`,'','此檔案為填寫結果留存，尚未送交主辦單位。'];
+    if(event.submitter?.id === 'downloadBackup') {
+      const blob = new Blob(['\ufeff'+lines.join('\r\n')], {type:'text/plain;charset=utf-8'});
+      const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='115年11月宿營調查_家庭'+family+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
+      $('#saveStatus').textContent='已下載備份；此操作不會送交主辦單位或寄出 Email。';
+    } else if(config.backendUrl) {
+      sendToCloud({familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members,hasMembership:$('#hasMembership').checked,tents:Number($('#tents').value)});
+    } else $('#saveStatus').textContent='Email 寄送尚未啟用，目前可先下載備份。';
   });
   renderMembers();
 })();
