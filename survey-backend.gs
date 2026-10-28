@@ -9,6 +9,7 @@ function cleanText_(value, max) {
 }
 function cellText_(s) { return /^[=+@-]/.test(String(s)) ? "'"+s : s; }
 function reply_(result) {
+  result.version=2;
   const json=JSON.stringify(result).replace(/</g,'\\u003c');
   return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><p>資料已處理，請返回調查表。</p><script>window.top.postMessage('+json+','+JSON.stringify(WEBSITE_ORIGIN)+');</script>').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -36,15 +37,18 @@ function mailReceipt_(sheet,row,nonce,email,family,reporter,portrait,members,r,t
 function doPost(e) {
   let nonce=''; let lock=LockService.getScriptLock();
   try {
-    if (!e.parameter.payload || e.parameter.payload.length>100000) throw new Error('資料格式錯誤');
+    if (!e.parameter.payload || e.parameter.payload.length>14500000) throw new Error('資料格式錯誤');
     const p=JSON.parse(e.parameter.payload);nonce=cleanText_(p.requestId,80);
     if (!/^[a-zA-Z0-9-]+$/.test(nonce)) throw new Error('收件編號錯誤');
+    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true});
+    if(p.confirmed!==true)throw new Error('請確認所有家庭成員與費用明細');
     const family=cleanText_(p.familyId,8);if(!/^[1-9][0-9]*$/.test(family)) throw new Error('家庭編號錯誤');
     const reporter=cleanText_(p.reporter,50);
     const email=cleanText_(p.email,254);if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||/[\r\n,;]/.test(email))throw new Error('Email 格式錯誤');
     if(!['yes','no'].includes(p.portrait)) throw new Error('請選擇肖像權意願');
     if(!Array.isArray(p.members)||!p.members.length||p.members.length>30) throw new Error('成員數量錯誤');
-    if(typeof p.hasMembership!=='boolean'||!Number.isInteger(p.tents)||p.tents<0||p.tents>99) throw new Error('額外費用欄位錯誤');
+    p.hasMembership=true;
+    p.tents=['44','53','81','14','57'].includes(family)?1:0;
     const members=p.members.map(m=>{
       const name=cleanText_(m.name,50);const plan=SurveyRules.plans.find(x=>x.id===m.plan);
       if(!plan||!['child','adult','free'].includes(m.kind)) throw new Error('成員收費或出席選項錯誤');
@@ -59,21 +63,35 @@ function doPost(e) {
     const previous=receipts.indexOf(nonce);
     if(previous>=0){
       const row=previous+2;
-      if(String(f.getRange(row,15).getValue())!==email)throw new Error('收件編號與 Email 不一致');
+      if(String(f.getRange(row,1).getValue())!==family||String(f.getRange(row,15).getValue())!==email)throw new Error('收件編號與 Email 不一致');
       return reply_(mailReceipt_(f,row,nonce,email,family,reporter,p.portrait,members,r,p.tents));
+    }
+    const familyIds=f.getRange(2,1,Math.max(f.getLastRow()-1,1),1).getValues().flat();
+    if(familyIds.some(id=>String(Number(id))===family))throw new Error('此家庭編號已送出，請勿重複填寫；如需修改請聯絡主辦單位');
+    let uploadUrl='';
+    if(p.portrait==='yes'){
+      if(!p.attachment)throw new Error('同意肖像權授權者，須先選擇已簽署的同意書檔案');
+      const upload=validatedUpload_(p.attachment);
+      uploadUrl=DriveApp.getFolderById(UPLOAD_FOLDER_ID).createFile(Utilities.newBlob(upload.bytes,upload.mime,family+upload.extension)).getUrl();
     }
     const rows=r.people.map(m=>[nonce,family,cellText_(m.name),{child:'各團團員（小孩）',adult:'成人／非團員',free:'大班以下（免費）'}[m.kind],SurveyRules.plans.find(x=>x.id===m.plan).label,m.noDinner?'是':'否',m.noBreakfast?'是':'否',m.noStay?'是':'否',cellText_(m.note),m.fees.camp,m.fees.joining,m.fees.total]);
     // 同一收件編號重試時不重複寫入成員。
     const existing=d.getRange(2,1,Math.max(d.getLastRow()-1,1),1).getValues().flat();
     if(!existing.includes(nonce))d.getRange(nextDataRow_(d),1,rows.length,12).setValues(rows);
     const receiptRow=nextDataRow_(f);
-    f.getRange(receiptRow,1,1,16).setValues([[family,cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意',p.hasMembership?'有會員編號':'無會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,'','已收到',cellText_(email),'待寄送']]);
+    f.getRange(receiptRow,1,1,16).setValues([[family,cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意',p.hasMembership?'有會員編號':'無會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
     SpreadsheetApp.flush();return reply_(mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents));
   }catch(error){return reply_({type:'surveyReceipt',requestId:nonce,ok:false,message:String(error.message||'收件失敗')});}
   finally{if(lock.hasLock())lock.releaseLock();}
 }
 function doGet(){
  return HtmlService.createHtmlOutput(`<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font:18px sans-serif;max-width:600px;margin:40px auto;padding:20px;line-height:1.8}input,button{font:inherit;padding:12px;max-width:100%;box-sizing:border-box}label{display:block;margin:20px 0}button{background:#176b87;color:white;border:0;border-radius:6px}</style><h1>家庭版肖像權同意書上傳</h1><p>上傳已簽署的 PDF、JPG 或 PNG，大小上限 10 MB。檔案將以家庭編號命名。</p><form id="f"><label>家庭編號 <input name="family" inputmode="numeric" pattern="[1-9][0-9]*" required></label><label>簽署檔案 <input name="file" type="file" accept="application/pdf,image/jpeg,image/png" required></label><button>上傳雲端</button></form><p id="s" role="status"></p><script>document.querySelector('#f').onsubmit=async function(e){e.preventDefault();const f=this.file.files[0],s=document.querySelector('#s'),b=this.querySelector('button');if(f.size>10*1024*1024){s.textContent='檔案不可超過10MB';return;}b.disabled=true;s.textContent='上傳中，請稍候';const reader=new FileReader();reader.onerror=()=>{s.textContent='無法讀取檔案';b.disabled=false};reader.onload=()=>google.script.run.withSuccessHandler(()=>{s.textContent='上傳完成，請返回調查表繼續填寫。';b.disabled=false}).withFailureHandler(err=>{s.textContent='上傳失敗：'+err.message;b.disabled=false}).uploadConsent({family:this.family.value,mime:f.type,data:reader.result.split(',')[1]});reader.readAsDataURL(f);};</script></html>`).setTitle('肖像權同意書上傳');
+}
+function validatedUpload_(p){
+ const extensions={'application/pdf':'.pdf','image/jpeg':'.jpg','image/png':'.png'};
+ if(!p||!extensions[p.mime]||typeof p.data!=='string'||p.data.length>14000000)throw new Error('請上傳PDF、JPG或PNG，大小不超過10MB');
+ const bytes=Utilities.base64Decode(p.data);if(!bytes.length||bytes.length>10*1024*1024)throw new Error('同意書檔案大小不符合');
+ return {bytes,mime:p.mime,extension:extensions[p.mime]};
 }
 function uploadConsent(p){
  const family=cleanText_(p.family,8);if(!/^[1-9][0-9]*$/.test(family))throw new Error('家庭編號錯誤');

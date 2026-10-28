@@ -1,15 +1,19 @@
 const vm=require('vm'),fs=require('fs'),assert=require('node:assert/strict');
-const data={requestId:'test-receipt-1',familyId:'45',reporter:'測試',email:'test@example.com',portrait:'yes',hasMembership:true,tents:0,members:[{name:'石斑',kind:'child',plan:'full',noStay:true,note:'離校'},{name:'雷龍',kind:'child',plan:'full'}]};
-function setup(fail=false,prior=false){
- const writes=[],mails=[];let status=prior?'已寄送':'';
- const family={getLastRow:()=>prior?2:1,getRange:(row,col)=>({getValues:()=>col===12?[[prior?data.requestId:'']]:[['']],getValue:()=>col===16?status:col===15?data.email:'',setValue:s=>{status=s;},setValues:r=>writes.push(['family',r])})};
- const details={getLastRow:()=>1,getRange:()=>({getValues:()=>[['']],setValues:r=>writes.push(['members',r])})};
- const context={console,HtmlService:{XFrameOptionsMode:{ALLOWALL:1},createHtmlOutput:html=>({html,setXFrameOptionsMode(){return this;}})},LockService:{getScriptLock:()=>({waitLock(){},hasLock:()=>true,releaseLock(){}})},SpreadsheetApp:{openById:()=>({getSheetByName:name=>name==='家庭總表'?family:details}),flush(){}},MailApp:{getRemainingDailyQuota:()=>100,sendEmail:mail=>{if(fail)throw new Error('測試寄送失敗');mails.push(mail);}}};
- vm.createContext(context);vm.runInContext(fs.readFileSync('survey-backend.gs','utf8'),context);return{context,writes,mails,getStatus:()=>status};
+function run(overrides={},stored=null,mailFail=false){
+ const writes=[],files=[],mails=[];let state='';
+ const family={getLastRow:()=>stored?2:1,getRange:(row,col)=>({getValues:()=>[[stored?(col===12?stored.requestId:col===1?stored.familyId:''):'']],getValue:()=>col===16?state:col===15?stored?.email:col===1?stored?.familyId:'',setValue:v=>state=v,setValues:r=>writes.push(['family',r])})};
+ const detail={getLastRow:()=>1,getRange:()=>({getValues:()=>[['']],setValues:r=>writes.push(['members',r])})};
+ const context={console,HtmlService:{XFrameOptionsMode:{ALLOWALL:1},createHtmlOutput:html=>({html,setXFrameOptionsMode(){return this;}})},LockService:{getScriptLock:()=>({waitLock(){},hasLock:()=>true,releaseLock(){}})},SpreadsheetApp:{openById:()=>({getSheetByName:n=>n==='家庭總表'?family:detail}),flush(){}},MailApp:{getRemainingDailyQuota:()=>100,sendEmail:mail=>{if(mailFail)throw Error('mail fail');mails.push(mail);}},Utilities:{base64Decode:s=>Array.from(Buffer.from(s,'base64')),newBlob:()=>({})},DriveApp:{getFolderById:()=>({createFile:blob=>{files.push(blob);return{getUrl:()=> 'https://drive.google.com/file/d/test'};}})}};
+ vm.createContext(context);vm.runInContext(fs.readFileSync('survey-backend.gs','utf8'),context);
+ const p={requestId:'test-receipt',confirmed:true,familyId:'45',reporter:'測試',email:'test@example.com',portrait:'yes',members:[{name:'石斑',kind:'child',plan:'full'}],hasMembership:false,tents:99,attachment:{mime:'application/pdf',data:'dGVzdA=='},...overrides};
+ const res=context.doPost({parameter:{payload:JSON.stringify(p)}}).html;
+ return {res,writes,files,mails,state};
 }
-let t=setup(),res=t.context.doPost({parameter:{payload:JSON.stringify(data)}});
-assert(res.html.includes('"emailSent":true'));assert.equal(t.mails.length,1);assert.equal(t.mails[0].to,'test@example.com');assert(t.mails[0].body.includes('不住宿（不含車宿）'));assert(t.mails[0].body.includes('3,400'));assert.equal(t.getStatus(),'已寄送');assert.equal(t.writes.find(w=>w[0]==='family')[1][0][14],data.email);
-t=setup(true);res=t.context.doPost({parameter:{payload:JSON.stringify(data)}});assert(res.html.includes('"ok":true'));assert(res.html.includes('"emailSent":false'));assert.equal(t.getStatus(),'寄送失敗');
-t=setup(false,true);res=t.context.doPost({parameter:{payload:JSON.stringify(data)}});assert(res.html.includes('"emailSent":true'));assert.equal(t.mails.length,0);assert.equal(t.writes.length,0);
-t=setup();res=t.context.doPost({parameter:{payload:JSON.stringify({...data,email:'a@example.com,b@example.com'})}});assert(res.html.includes('"ok":false'));assert.equal(t.writes.length,0);assert.equal(t.mails.length,0);
-console.log('Email 模擬測試通過：收件者、完整紀錄、車宿備註、寄送成功／失敗、重試不重寄、拒絕多收件者。');
+let t=run();assert(t.res.includes('"ok":true'));assert.equal(t.files.length,1);const row=t.writes.find(w=>w[0]==='family')[1][0];assert.equal(row[4],0);assert.equal(row[7],1000);assert.equal(row[12],'https://drive.google.com/file/d/test');
+t=run({familyId:'44'});assert.equal(t.writes.find(w=>w[0]==='family')[1][0][4],1);
+for(const p of [{confirmed:false},{attachment:null},{reporter:' '},{email:'invalid'},{members:[{name:'石斑',kind:'child',plan:'late',note:''}]}]){t=run(p);assert(t.res.includes('"ok":false'));assert.equal(t.writes.length,0);assert.equal(t.mails.length,0);}
+t=run({}, {familyId:'45',requestId:'previous',email:'test@example.com'});assert(t.res.includes('此家庭編號已送出'));assert.equal(t.files.length,0);assert.equal(t.writes.length,0);assert.equal(t.mails.length,0);
+t=run({portrait:'no',attachment:null});assert(t.res.includes('"ok":true'));assert.equal(t.files.length,0);
+t=run({portrait:'no',attachment:null},null,true);assert(t.res.includes('"emailSent":false'));assert.equal(t.writes.length,2);
+t=run({action:'capabilities',confirmed:false});assert(t.res.includes('"version":2'));assert(t.res.includes('"ok":true'));assert.equal(t.writes.length,0);
+console.log('通過：每家庭限一次、必填驗證、同意書必附、拒絕者免附、固定帳位、自動年費、服務版本驗證。');

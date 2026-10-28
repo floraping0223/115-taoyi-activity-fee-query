@@ -12,7 +12,7 @@
   function newMember(name = '', kind = '') {
     return {id: nextId++, name, kind, plan:'', note:'', noDinner:false, noBreakfast:false, noStay:false};
   }
-  function result() { return rules.calculate(family, members, $('#hasMembership').checked, $('#tents').value); }
+  function result() { return rules.calculate(family, members, true, $('#tents').value); }
   function updateSummary() {
     const r = result();
     const campDetails = r.people.map(m => '<div class="summary-line summary-detail"><span>'+escape(m.name || '未填自然名')+' · '+escape(rules.plans.find(p => p.id === m.plan)?.label || '尚未選擇出席方式')+'</span><span>'+money(m.fees.camp)+'</span></div>').join('');
@@ -91,13 +91,15 @@
     members = members.filter(m => m.id !== Number(button.dataset.remove));
     $('#confirmed').checked = false; renderMembers();
   });
-  ['#hasMembership','#tents'].forEach(s => $(s).addEventListener('input', () => { $('#confirmed').checked = false; updateSummary(); }));
+  ['#tents'].forEach(s => $(s).addEventListener('input', () => { $('#confirmed').checked = false; updateSummary(); }));
   document.querySelectorAll('[name=portrait]').forEach(input => input.addEventListener('change', () => {
-    $('#consentFiles').hidden = input.value !== 'yes'; $('#confirmed').checked = false;
+    $('#consentFiles').hidden = input.value !== 'yes';
+    $('#consentAttachment').required = input.value === 'yes'; $('#confirmed').checked = false;
   }));
   const config = window.SURVEY_CONFIG || {};
   if(config.backendUrl && !config.portraitUploadUrl)config.portraitUploadUrl=config.backendUrl;
   [['範例','portraitExampleUrl'],['空白表格','portraitBlankUrl'],['上傳雲端','portraitUploadUrl']].forEach(([label,key], i) => {
+    if(key==='portraitUploadUrl'){const label=document.createElement('span');label.textContent='3. 上傳雲端：請於下方選擇簽署檔案，送出時一併上傳。';$('#documentLinks').append(label);return;}
     let url;
     try { url = new URL(config[key], location.href); } catch {}
     const element = document.createElement(config[key] && (url?.protocol === 'https:' || url?.origin === location.origin) ? 'a' : 'span');
@@ -106,6 +108,8 @@
     $('#documentLinks').append(element);
   });
   let lastSubmission = null;
+  let backendReady = false;
+  let submitted = false;
   async function sendToCloud(p) {
     const endpoint = config.backendUrl;
     if (!endpoint) return;
@@ -118,25 +122,40 @@
     const form=document.createElement('form'); form.method='POST'; form.action=endpoint; form.target=iframe.name; form.hidden=true;
     const field=document.createElement('input'); field.name='payload';field.value=JSON.stringify(p);form.append(field);document.body.append(form);
     let timer;
-    const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',received);button.disabled=false;form.remove();iframe.remove();};
+    const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',received);button.disabled=submitted || !backendReady;form.remove();iframe.remove();};
     const received=event=>{
       let origin;try{origin=new URL(event.origin);}catch{return;}
       if (!(origin.hostname === 'script.google.com' || origin.hostname.endsWith('.googleusercontent.com')))return;
       const reply=event.data;if(reply?.type!=='surveyReceipt'||reply.requestId!==p.requestId)return;
-      cleanup();$('#saveStatus').textContent=reply.ok?(reply.emailSent?'已送出，填寫紀錄已寄至 '+p.email+'。收件編號：'+p.requestId:'調查已收件，但 Email 寄送失敗；請確認信箱後重試。收件編號：'+p.requestId):'收件失敗：'+(reply.message||'請稍後再試');
+      if(reply.ok){submitted=true;button.disabled=true;}
+      cleanup();$('#saveStatus').textContent=reply.ok?(reply.emailSent?'已送出，填寫紀錄已寄至 '+p.email+'。收件編號：'+p.requestId:'調查已收件，但 Email 寄送失敗；請聯絡主辦單位補寄。收件編號：'+p.requestId):'收件失敗：'+(reply.message||'請稍後再試');
     };
     window.addEventListener('message',received);
     timer=setTimeout(()=>{cleanup();$('#saveStatus').textContent='尚未確認送達，請稍後重新送出，系統會沿用收件編號避免重複。';},45000);
     form.submit();
   }
   if(config.backendUrl){
-    $('#sendEmailButton').disabled=false;
+    $('#sendEmailButton').disabled=true;
     $('#sendEmailButton').textContent='送出並寄送填寫紀錄';
-    $('#saveStatus').textContent='送出後，填寫紀錄將寄至上方 Email。請確認信箱正確，並留意垃圾郵件匣。';
+    $('#saveStatus').textContent='正在確認收件服務…';
+    const nonce=crypto.randomUUID(),frame=document.createElement('iframe'),form=document.createElement('form'),field=document.createElement('input');
+    frame.name='capabilities-'+nonce;frame.hidden=true;document.body.append(frame);
+    form.method='POST';form.target=frame.name;form.action=config.backendUrl;form.hidden=true;field.name='payload';field.value=JSON.stringify({requestId:nonce,action:'capabilities'});form.append(field);document.body.append(form);
+    let checkTimer;
+    const finish=()=>{clearTimeout(checkTimer);window.removeEventListener('message',check);form.remove();frame.remove();};
+    const check=e=>{let origin;try{origin=new URL(e.origin);}catch{return;}if(!(origin.hostname==='script.google.com'||origin.hostname.endsWith('.googleusercontent.com')))return;
+      if(e.data?.requestId!==nonce)return;
+      backendReady=e.data.ok===true&&e.data.version>=2;finish();$('#sendEmailButton').disabled=!backendReady;
+      $('#saveStatus').textContent=backendReady?'每個家庭編號限送出一次。必填資料完整，且同意者已選擇簽署檔案後，才能送出。':'收件服務待更新，暫停送出。主辦單位需將最新版收件程式更新部署。';
+    };
+    window.addEventListener('message',check);checkTimer=setTimeout(()=>{finish();$('#saveStatus').textContent='無法確認收件服務，請稍後重新整理。';},30000);form.submit();
     if(!config.portraitUploadUrl)config.portraitUploadUrl=config.backendUrl;
   }
-  $('#surveyForm').addEventListener('submit', event => {
+  $('#surveyForm').addEventListener('submit', async event => {
+    const downloadOnly=event.submitter?.id === 'downloadBackup';
     event.preventDefault();
+    if(!downloadOnly && (submitted || !backendReady)){ $('#saveStatus').textContent=submitted?'本家庭已送出，請勿重複填寫。':'收件服務尚未就緒，請稍後再試。'; return; }
+    if(!$('#surveyForm').reportValidity())return;
     if (!family || normalize($('#familyId').value) !== family) { $('#saveStatus').textContent = '請先按「帶入成員」確認家庭編號。'; $('#loadFamily').focus(); return; }
     if (!members.length) { $('#saveStatus').textContent = '請至少填寫一位家庭成員。'; $('#addMember').focus(); return; }
     if (!$('#reporter').value.trim() || members.some(m => !m.name.trim() || (['day1','day2','late'].includes(m.plan) && !m.note.trim()))) { $('#saveStatus').textContent = '自然名及必要的到校／離校時間不可只填空白。'; return; }
@@ -150,7 +169,14 @@
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='115年11月宿營調查_家庭'+family+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
       $('#saveStatus').textContent='已下載備份；此操作不會送交主辦單位或寄出 Email。';
     } else if(config.backendUrl) {
-      sendToCloud({familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members,hasMembership:$('#hasMembership').checked,tents:Number($('#tents').value)});
+      let attachment=null;
+      if(portrait==='yes'){
+        const file=$('#consentAttachment').files[0];
+        if(!file || !['application/pdf','image/jpeg','image/png'].includes(file.type) || !file.size || file.size>10*1024*1024){$('#saveStatus').textContent='請選擇已簽署的PDF、JPG或PNG同意書（10MB以內）。';return;}
+        $('#sendEmailButton').disabled=true;
+        try{attachment={mime:file.type,data:await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);})};}catch{$('#sendEmailButton').disabled=false;$('#saveStatus').textContent='無法讀取檔案，請重新選擇。';return;}
+      }
+      sendToCloud({confirmed:$('#confirmed').checked,attachment,familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members,hasMembership:true,tents:Number($('#tents').value)});
     } else $('#saveStatus').textContent='Email 寄送尚未啟用，目前可先下載備份。';
   });
   renderMembers();
