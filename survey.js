@@ -15,7 +15,10 @@
   function newMember(name = '', kind = '') {
     return {id: nextId++, name, kind, plan:'', note:'', noDinner:false, noBreakfast:false, noStay:false};
   }
-  function result() { return rules.calculate(family, members, true, $('#tents').value); }
+  function annualChoice(){return document.querySelector('[name=annualChoice]:checked')?.value||'';}
+  function annualLabel(){return rules.annualOptions[annualChoice()]||'尚未選擇';}
+  function annualDisplay(r){return annualChoice()==='collect'?money(r.annual):annualChoice()?'待審核（未計入預估總額）':'請選擇年費處理方式';}
+  function result() { return rules.calculate(family, members, annualChoice()==='collect', $('#tents').value); }
   function updateSummary() {
     const r = result();
     const campDetails = r.people.map(m => '<div class="summary-line summary-detail"><span>'+escape(m.name || '未填自然名')+' · '+escape(rules.plans.find(p => p.id === m.plan)?.label || '尚未選擇出席方式')+'</span><span>'+money(m.fees.camp)+'</span></div>').join('');
@@ -23,10 +26,10 @@
     $('#summary').innerHTML = '<div class="summary-list">'+
       '<div class="summary-category"><div class="summary-line category-total"><strong>宿營活動費小計</strong><strong>'+money(r.camp)+'</strong></div><p class="summary-caption">以下為活動費明細，不含入團費與家庭年費</p>'+ (campDetails || '<p class="hint">請先帶入或新增家庭成員。</p>')+'</div>'+
       '<div class="summary-category"><div class="summary-line category-total"><strong>入團費小計</strong><strong>'+money(r.joining)+'</strong></div>'+ (joiningDetails || '<p class="summary-caption">本家庭無應收入團費</p>')+'</div>'+
-      '<div class="summary-line category-total"><span>116 年家庭會員年費</span><strong>'+money(r.annual)+'</strong></div>'+
+      '<div class="summary-line category-total"><span>116 年家庭會員年費</span><strong>'+escape(annualDisplay(r))+'</strong></div>'+
       '<div class="summary-line category-total"><span>露營帳位加購 · '+escape($('#tents').value || '0')+' 帳</span><strong>'+money(r.tentFee)+'</strong></div></div>'+
-      '<p class="hint">家庭應繳總額＝活動費小計＋入團費小計＋家庭年費＋帳位加購</p>'+
-      '<div class="grand-total"><span>家庭應繳總額</span><strong>'+money(r.total)+'</strong></div>';
+      '<p class="hint">家庭預估總額＝活動費小計＋入團費小計＋家庭年費＋帳位加購</p>'+
+      '<div class="grand-total"><span>家庭預估總額</span><strong>'+money(r.total)+'</strong></div>';
   }
   function updateCard(card, member) {
     const plan = rules.plans.find(p => p.id === member.plan);
@@ -107,6 +110,7 @@
     members = members.filter(m => m.id !== Number(button.dataset.remove));
     $('#confirmed').checked = false; renderMembers();
   });
+  document.querySelectorAll('[name=annualChoice]').forEach(input=>input.addEventListener('change',()=>{$('#confirmed').checked=false;updateSummary();}));
   ['#tents'].forEach(s => $(s).addEventListener('input', () => { $('#confirmed').checked = false; updateSummary(); }));
   document.querySelectorAll('[name=portrait]').forEach(input => input.addEventListener('change', () => {
     $('#consentFiles').hidden = input.value !== 'yes';
@@ -172,7 +176,7 @@
     const finish=()=>{clearTimeout(checkTimer);window.removeEventListener('message',check);form.remove();frame.remove();};
     const check=e=>{let origin;try{origin=new URL(e.origin);}catch{return;}if(!(origin.hostname==='script.google.com'||origin.hostname.endsWith('.googleusercontent.com')))return;
       if(e.data?.requestId!==nonce)return;
-      backendReady=e.data.ok===true&&e.data.version>=2;finish();$('#sendEmailButton').disabled=!backendReady||!familyStatusKnown||submittedFamily===family;
+      backendReady=e.data.ok===true&&e.data.version>=2&&e.data.annualChoiceSupported===true;finish();$('#sendEmailButton').disabled=!backendReady||!familyStatusKnown||submittedFamily===family;
       $('#saveStatus').textContent=backendReady?'每個家庭編號限送出一次。必填資料完整，且同意者已選擇簽署檔案後，才能送出。':'收件服務待更新，暫停送出。主辦單位需將最新版收件程式更新部署。';
     };
     window.addEventListener('message',check);checkTimer=setTimeout(()=>{finish();$('#saveStatus').textContent='無法確認收件服務，請稍後重新整理。';},30000);form.submit();
@@ -191,7 +195,7 @@
     if (new Set(names).size !== names.length) { $('#saveStatus').textContent = '家庭成員自然名重複，請確認名冊。'; return; }
     const r = result();
     const portrait = document.querySelector('[name=portrait]:checked')?.value;
-    const lines = ['115年11月入團儀典宿營調查',`填表人自然名：${$('#reporter').value.trim()}`,`填寫者 Email：${$('#reporterEmail').value.trim()}`,`家庭編號：${family}`,`肖像權授權：${portrait === 'yes' ? '我同意' : '我不同意'}`,'',...r.people.flatMap(m => [`${m.name.trim()}｜${kinds[m.kind]}｜${rules.plans.find(p => p.id === m.plan).label}`,`  活動費 ${money(m.fees.camp)}／入團費 ${money(m.fees.joining)}／小計 ${money(m.fees.total)}`,`  餐宿調整：${[m.noDinner && '不用晚餐', m.noBreakfast && '不用早餐', m.noStay && '不住宿（不含車宿）'].filter(Boolean).join('、') || '依方案'}`,`  備註：${m.note.trim() || '無'}`]),'',`活動費合計：${money(r.camp)}`,`入團費合計：${money(r.joining)}`,`116年家庭會員年費：${money(r.annual)}`,`露營帳位：${$('#tents').value} 帳，${money(r.tentFee)}`,`家庭應繳總額：${money(r.total)}`,'','此檔案為填寫結果留存，尚未送交主辦單位。'];
+    const lines = ['115年11月入團儀典宿營調查',`填表人自然名：${$('#reporter').value.trim()}`,`填寫者 Email：${$('#reporterEmail').value.trim()}`,`家庭編號：${family}`,`肖像權授權：${portrait === 'yes' ? '我同意' : '我不同意'}`,'',...r.people.flatMap(m => [`${m.name.trim()}｜${kinds[m.kind]}｜${rules.plans.find(p => p.id === m.plan).label}`,`  活動費 ${money(m.fees.camp)}／入團費 ${money(m.fees.joining)}／小計 ${money(m.fees.total)}`,`  餐宿調整：${[m.noDinner && '不用晚餐', m.noBreakfast && '不用早餐', m.noStay && '不住宿（不含車宿）'].filter(Boolean).join('、') || '依方案'}`,`  備註：${m.note.trim() || '無'}`]),'',`活動費合計：${money(r.camp)}`,`入團費合計：${money(r.joining)}`,`116年費處理方式：${annualLabel()}`,`116年家庭會員年費：${annualDisplay(r)}`,`露營帳位：${$('#tents').value} 帳，${money(r.tentFee)}`,`家庭預估總額：${money(r.total)}`,'','此檔案為填寫結果留存，尚未送交主辦單位。'];
     if(event.submitter?.id === 'downloadBackup') {
       const blob = new Blob(['\ufeff'+lines.join('\r\n')], {type:'text/plain;charset=utf-8'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='115年11月宿營調查_家庭'+family+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
@@ -204,7 +208,7 @@
         $('#sendEmailButton').disabled=true;
         try{attachment={mime:file.type,data:await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);})};}catch{$('#sendEmailButton').disabled=false;$('#saveStatus').textContent='無法讀取檔案，請重新選擇。';return;}
       }
-      sendToCloud({confirmed:$('#confirmed').checked,attachment,familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members,hasMembership:true,tents:Number($('#tents').value)});
+      sendToCloud({confirmed:$('#confirmed').checked,attachment,familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members,annualChoice:annualChoice(),hasMembership:true,tents:Number($('#tents').value)});
     } else $('#saveStatus').textContent='Email 寄送尚未啟用，目前可先下載備份。';
   });
   renderMembers();

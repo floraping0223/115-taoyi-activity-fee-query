@@ -1,6 +1,7 @@
 // 貼到新試算表的「擴充功能 → Apps Script」，以網頁應用程式部署。
 const SPREADSHEET_ID = '1KyD86bPLGgzlNSrtfjPw7tW2E4I2bdqe8dkM-7seGD0';
 const UPLOAD_FOLDER_ID = '1yDYz3V15ZBeIo_qDwCpEGvpVb1WEo-Ol';
+const ANNUAL_OPTIONS={collect:'本次由團代收116年費',lifetime:'我是終身會員',card:'已設定信用卡年底自動扣款'};
 const WEBSITE_ORIGIN = 'https://floraping0223.github.io';
 function cleanText_(value, max) {
   const text=String(value || '').trim();
@@ -24,12 +25,12 @@ function sortReplies_(familySheet,memberSheet){
   if(familyCount>1)familySheet.getRange(2,1,familyCount,16).sort({column:1,ascending:true});
   if(memberCount>1)memberSheet.getRange(2,1,memberCount,12).sort({column:2,ascending:true});
 }
-function mailReceipt_(sheet,row,nonce,email,family,reporter,portrait,members,r,tents) {
+function mailReceipt_(sheet,row,nonce,email,family,reporter,portrait,members,r,tents,annualChoice) {
   const status=sheet.getRange(row,16).getValue();
   if(status==='已寄送')return {type:'surveyReceipt',requestId:nonce,ok:true,emailSent:true};
   const money=n=>'NT$ '+n.toLocaleString('zh-TW');
   const kind={child:'各團團員（小孩）',adult:'成人／非團員',free:'大班以下（免費）'};
-  const lines=['115年11月入團儀典宿營調查','填表人自然名：'+reporter,'家庭編號：'+family,'肖像權授權：'+(portrait==='yes'?'我同意':'我不同意'),'收件編號：'+nonce,'',...r.people.flatMap(m=>[m.name+'｜'+kind[m.kind]+'｜'+SurveyRules.plans.find(p=>p.id===m.plan).label,'活動費 '+money(m.fees.camp)+'／入團費 '+money(m.fees.joining)+'／小計 '+money(m.fees.total),'餐宿調整：'+([m.noDinner&&'不用晚餐',m.noBreakfast&&'不用早餐',m.noStay&&'不住宿（不含車宿）'].filter(Boolean).join('、')||'依方案'),'備註：'+(m.note||'無'),'']),'活動費合計：'+money(r.camp),'入團費合計：'+money(r.joining),'116年家庭會員年費：'+money(r.annual),'露營帳位：'+tents+'帳，'+money(r.tentFee),'家庭應繳總額：'+money(r.total),'','本信為調查填寫紀錄，並非繳費完成證明。'];
+  const lines=['115年11月入團儀典宿營調查','填表人自然名：'+reporter,'家庭編號：'+family,'肖像權授權：'+(portrait==='yes'?'我同意':'我不同意'),'收件編號：'+nonce,'',...r.people.flatMap(m=>[m.name+'｜'+kind[m.kind]+'｜'+SurveyRules.plans.find(p=>p.id===m.plan).label,'活動費 '+money(m.fees.camp)+'／入團費 '+money(m.fees.joining)+'／小計 '+money(m.fees.total),'餐宿調整：'+([m.noDinner&&'不用晚餐',m.noBreakfast&&'不用早餐',m.noStay&&'不住宿（不含車宿）'].filter(Boolean).join('、')||'依方案'),'備註：'+(m.note||'無'),'']),'活動費合計：'+money(r.camp),'入團費合計：'+money(r.joining),'116年費處理方式：'+ANNUAL_OPTIONS[annualChoice],'116年家庭會員年費：'+(annualChoice==='collect'?money(r.annual):'待審核（未計入預估總額）'),'露營帳位：'+tents+'帳，'+money(r.tentFee),'家庭預估總額：'+money(r.total),'','本信為調查填寫紀錄，並非繳費完成證明。'];
   try {
     if(MailApp.getRemainingDailyQuota()<1)throw new Error('今日寄信額度已用完');
     MailApp.sendEmail({to:email,subject:'115年11月入團儀典宿營調查｜家庭'+family+'填寫紀錄',body:lines.join('\n'),name:'桃園親子一團'});
@@ -46,7 +47,7 @@ function doPost(e) {
     if (!e.parameter.payload || e.parameter.payload.length>14500000) throw new Error('資料格式錯誤');
     const p=JSON.parse(e.parameter.payload);nonce=cleanText_(p.requestId,80);
     if (!/^[a-zA-Z0-9-]+$/.test(nonce)) throw new Error('收件編號錯誤');
-    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyStatusSupported:true});
+    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyStatusSupported:true,annualChoiceSupported:true});
     if(p.action==='familyStatus'){
       const id=cleanText_(p.familyId,8);if(!/^[1-9][0-9]*$/.test(id))throw new Error('家庭編號錯誤');
       const sheet=SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('家庭總表');
@@ -59,7 +60,8 @@ function doPost(e) {
     const email=cleanText_(p.email,254);if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||/[\r\n,;]/.test(email))throw new Error('Email 格式錯誤');
     if(!['yes','no'].includes(p.portrait)) throw new Error('請選擇肖像權意願');
     if(!Array.isArray(p.members)||!p.members.length||p.members.length>30) throw new Error('成員數量錯誤');
-    p.hasMembership=true;
+    if(!Object.prototype.hasOwnProperty.call(ANNUAL_OPTIONS,p.annualChoice))throw new Error('請選擇116年費處理方式');
+    p.hasMembership=p.annualChoice==='collect';
     p.tents=['44','53','81','14','57'].includes(family)?1:0;
     const members=p.members.map(m=>{
       const name=cleanText_(m.name,50);const plan=SurveyRules.plans.find(x=>x.id===m.plan);
@@ -76,7 +78,7 @@ function doPost(e) {
     if(previous>=0){
       const row=previous+2;
       if(String(f.getRange(row,1).getValue())!==family||String(f.getRange(row,15).getValue())!==email)throw new Error('收件編號與 Email 不一致');
-      return reply_(mailReceipt_(f,row,nonce,email,family,reporter,p.portrait,members,r,p.tents));
+      return reply_(mailReceipt_(f,row,nonce,email,family,reporter,p.portrait,members,r,p.tents,p.annualChoice));
     }
     const familyIds=f.getRange(2,1,Math.max(f.getLastRow()-1,1),1).getValues().flat();
     if(familyIds.some(id=>String(Number(id))===family))throw new Error('此家庭編號已送出，請勿重複填寫；如需修改請聯絡主辦單位');
@@ -90,10 +92,14 @@ function doPost(e) {
     // 同一收件編號重試時不重複寫入成員。
     const existing=d.getRange(2,1,Math.max(d.getLastRow()-1,1),1).getValues().flat();
     if(!existing.includes(nonce))d.getRange(nextDataRow_(d),1,rows.length,12).setValues(rows);
+    const annualSheet=ss.getSheetByName('年費申報');
+    if(!annualSheet)throw new Error('年費申報表尚未設定，請洽明鏡');
+    const annualReceipts=annualSheet.getRange(2,1,Math.max(annualSheet.getLastRow()-1,1),1).getValues().flat();
+    if(!annualReceipts.includes(nonce))annualSheet.getRange(nextDataRow_(annualSheet),1,1,6).setValues([[nonce,Number(family),ANNUAL_OPTIONS[p.annualChoice],p.annualChoice==='collect'?'由團代收':'待審核',r.annual,new Date()]]);
     const receiptRow=nextDataRow_(f);
-    f.getRange(receiptRow,1,1,16).setValues([[Number(family),cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意',p.hasMembership?'有會員編號':'無會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
+    f.getRange(receiptRow,1,1,16).setValues([[Number(family),cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意','有會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
     SpreadsheetApp.flush();
-    const response=mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents);
+    const response=mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents,p.annualChoice);
     sortReplies_(f,d);
     return reply_(response);
   }catch(error){return reply_({type:'surveyReceipt',requestId:nonce,ok:false,message:String(error.message||'收件失敗')});}

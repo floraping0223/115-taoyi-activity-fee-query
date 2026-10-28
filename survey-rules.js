@@ -32,5 +32,5 @@
     const tentFee = Math.max(0, Number(tents) || 0) * 350;
     return { people, camp, joining, annual, tentFee, total: camp + joining + annual + tentFee };
   }
-  root.SurveyRules = { plans, returning, joiningFee, calculateMember, calculate };
+  root.SurveyRules = { plans, returning, joiningFee, calculateMember, calculate, annualOptions: { collect:'本次由團代收116年費', lifetime:'我是終身會員', card:'已設定信用卡年底自動扣款' } };
 })(typeof window !== 'undefined' ? window : globalThis);
