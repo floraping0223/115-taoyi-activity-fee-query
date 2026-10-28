@@ -5,7 +5,7 @@ const assert=require('node:assert/strict');
  const page=await browser.newPage({viewport:{width:1280,height:900}});
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
  await page.route('https://script.google.com/**',async route=>{const params=new URLSearchParams(route.request().postData()||'');const p=JSON.parse(params.get('payload')||'{}');await route.fulfill({contentType:'text/html',body:'<script>window.top.postMessage('+JSON.stringify({type:'surveyReceipt',requestId:p.requestId,ok:true,version:2})+',"*")</script>'});});
- await page.goto('file:///C:/Users/USER/Documents/528/index.html');
+ await page.goto('file:///C:/Users/USER/Documents/528/camp.html');
  await page.locator('#reporter').fill('測試填表人'); await page.locator('#reporterEmail').fill('test@example.com'); await page.locator('#sendEmailButton').waitFor({state:'visible'}); await page.waitForFunction(()=>!document.querySelector('#sendEmailButton').disabled); assert.equal(await page.locator('#hasMembership').count(),0); assert(await page.locator('#tents').getAttribute('readonly')!==null); await page.locator('#familyId').fill('45'); await page.locator('#loadFamily').click();
  const count=await page.locator('.member-card').count(); assert(count>=2);
  for(const select of await page.locator('[data-field=plan]').all())await select.selectOption('full');
