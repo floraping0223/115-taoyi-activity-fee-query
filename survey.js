@@ -15,7 +15,15 @@
   function result() { return rules.calculate(family, members, $('#hasMembership').checked, $('#tents').value); }
   function updateSummary() {
     const r = result();
-    $('#summary').innerHTML = `<div class="summary-people">${r.people.map(m => `<div class="summary-line"><span>${escape(m.name || '未填自然名')} · ${escape(rules.plans.find(p => p.id === m.plan)?.label || '尚未選擇出席方式')}</span><span>${money(m.fees.total)}</span></div>`).join('') || '<p class="hint">請先帶入或新增家庭成員。</p>'}</div><div class="summary-list"><div class="summary-line"><span>宿營活動費</span><strong>${money(r.camp)}</strong></div><div class="summary-line"><span>入團費（逐人計算）</span><strong>${money(r.joining)}</strong></div><div class="summary-line"><span>116 年家庭會員年費</span><strong>${money(r.annual)}</strong></div><div class="summary-line"><span>露營帳位加購 · ${escape($('#tents').value || '0')} 帳</span><strong>${money(r.tentFee)}</strong></div></div><div class="grand-total"><span>家庭應繳總額</span><strong>${money(r.total)}</strong></div>`;
+    const campDetails = r.people.map(m => '<div class="summary-line summary-detail"><span>'+escape(m.name || '未填自然名')+' · '+escape(rules.plans.find(p => p.id === m.plan)?.label || '尚未選擇出席方式')+'</span><span>'+money(m.fees.camp)+'</span></div>').join('');
+    const joiningDetails = r.people.filter(m => m.fees.joining > 0).map(m => '<div class="summary-line summary-detail"><span>'+escape(m.name || '未填自然名')+' · 入團費</span><span>'+money(m.fees.joining)+'</span></div>').join('');
+    $('#summary').innerHTML = '<div class="summary-list">'+
+      '<div class="summary-category"><div class="summary-line category-total"><strong>宿營活動費小計</strong><strong>'+money(r.camp)+'</strong></div><p class="summary-caption">以下為活動費明細，不含入團費與家庭年費</p>'+ (campDetails || '<p class="hint">請先帶入或新增家庭成員。</p>')+'</div>'+
+      '<div class="summary-category"><div class="summary-line category-total"><strong>入團費小計</strong><strong>'+money(r.joining)+'</strong></div>'+ (joiningDetails || '<p class="summary-caption">本家庭無應收入團費</p>')+'</div>'+
+      '<div class="summary-line category-total"><span>116 年家庭會員年費</span><strong>'+money(r.annual)+'</strong></div>'+
+      '<div class="summary-line category-total"><span>露營帳位加購 · '+escape($('#tents').value || '0')+' 帳</span><strong>'+money(r.tentFee)+'</strong></div></div>'+
+      '<p class="hint">家庭應繳總額＝活動費小計＋入團費小計＋家庭年費＋帳位加購</p>'+
+      '<div class="grand-total"><span>家庭應繳總額</span><strong>'+money(r.total)+'</strong></div>';
   }
   function updateCard(card, member) {
     const plan = rules.plans.find(p => p.id === member.plan);
