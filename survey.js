@@ -143,30 +143,56 @@
   let lastSubmission = null;
   let backendReady = false;
   let submitted = false;
-  async function sendToCloud(p) {
-    const endpoint = config.backendUrl;
-    if (!endpoint) return;
-    const encoded = JSON.stringify(p);
-    if (!lastSubmission || lastSubmission.encoded !== encoded) lastSubmission = {encoded, requestId:crypto.randomUUID()};
-    p.requestId = lastSubmission.requestId;
-    const button = $('#sendEmailButton'); button.disabled = true;
-    $('#saveStatus').textContent = '正在送交主辦單位，請保持此頁開啟。';
-    const iframe=document.createElement('iframe'); iframe.name='receipt-'+p.requestId; iframe.hidden=true; document.body.append(iframe);
-    const form=document.createElement('form'); form.method='POST'; form.action=endpoint; form.target=iframe.name; form.hidden=true;
-    const field=document.createElement('input'); field.name='payload';field.value=JSON.stringify(p);form.append(field);document.body.append(form);
-    let timer;
-    const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',received);button.disabled=submitted || !backendReady || !familyStatusKnown || submittedFamily===family;form.remove();iframe.remove();};
-    const received=event=>{
-      let origin;try{origin=new URL(event.origin);}catch{return;}
-      if (!(origin.hostname === 'script.google.com' || origin.hostname.endsWith('.googleusercontent.com')))return;
-      const reply=event.data;if(reply?.type!=='surveyReceipt'||reply.requestId!==p.requestId)return;
-      if(reply.ok){submitted=true;button.disabled=true;}
-      cleanup();$('#saveStatus').textContent=reply.ok?(reply.emailSent?'已送出，填寫紀錄已寄至 '+p.email+'。收件編號：'+p.requestId:'調查已收件，但 Email 寄送失敗；請聯絡主辦單位補寄。收件編號：'+p.requestId):'收件失敗：'+(reply.message||'請稍後再試');
-    };
-    window.addEventListener('message',received);
-    timer=setTimeout(()=>{cleanup();$('#saveStatus').textContent='尚未確認送達，請稍後重新送出，系統會沿用收件編號避免重複。';},45000);
-    form.submit();
+  let submissionBusy=false;
+  const disabledBeforeSubmit=new Map();
+  function setSubmissionBusy(busy){
+    if(busy&&!submissionBusy){disabledBeforeSubmit.clear();$('#surveyForm').querySelectorAll('input,select,button').forEach(e=>{disabledBeforeSubmit.set(e,e.disabled);e.disabled=true;});}
+    if(!busy&&submissionBusy){disabledBeforeSubmit.forEach((disabled,e)=>{if(e.isConnected)e.disabled=disabled;});disabledBeforeSubmit.clear();}
+    submissionBusy=busy;$('#surveyForm').setAttribute('aria-busy',String(busy));$('#saveStatus').classList.toggle('sending',busy);
+    if(!busy)$('#sendEmailButton').disabled=submitted||!backendReady||!familyStatusKnown||submittedFamily===family;
   }
+  function readConsentFile(file){return new Promise((resolve,reject)=>{
+    const reader=new FileReader();let timer;
+    const finish=(error,data)=>{clearTimeout(timer);reader.onload=reader.onerror=reader.onabort=null;error?reject(error):resolve(data);};
+    reader.onload=()=>finish(null,String(reader.result));reader.onerror=()=>finish(Error('無法讀取同意書，請重新選擇檔案。'));reader.onabort=()=>finish(Error('讀取檔案已中斷，請重新選擇。'));
+    timer=setTimeout(()=>{finish(Error('讀取檔案逾時，請先將檔案下載到手機後重新選擇。'));reader.abort();},20000);reader.readAsDataURL(file);
+  });}
+  async function prepareConsent(file){
+    const original=await readConsentFile(file),raw={mime:file.type,data:original.split(',')[1]};
+    if(file.type==='application/pdf'||file.size<600*1024)return raw;
+    try{
+      const compressed=await new Promise(resolve=>{
+        const img=new Image();let done=false;const timer=setTimeout(()=>finish(null),8000);
+        function finish(data){if(done)return;done=true;clearTimeout(timer);img.onload=img.onerror=null;resolve(data);}
+        img.onerror=()=>finish(null);img.onload=()=>{try{const scale=Math.min(1,2400/Math.max(img.naturalWidth,img.naturalHeight)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext('2d');if(!ctx){finish(null);return;}ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',0.88).split(',')[1];canvas.width=canvas.height=1;finish(data&&data.length*0.75<file.size*0.9?{mime:'image/jpeg',data}:null);}catch{finish(null);}};img.src=original;
+      });return compressed||raw;
+    }catch{return raw;}
+  }
+  async function sendToCloud(p) {
+    if (!config.backendUrl)throw Error('收件服務尚未設定。');
+    const encoded=JSON.stringify(p);
+    if(!lastSubmission||lastSubmission.encoded!==encoded)lastSubmission={encoded,requestId:crypto.randomUUID()};
+    p.requestId=lastSubmission.requestId;setSubmissionBusy(true);
+    const iframe=document.createElement('iframe'),form=document.createElement('form'),field=document.createElement('input');
+    iframe.name='receipt-'+p.requestId;iframe.hidden=true;form.method='POST';form.action=config.backendUrl;form.target=iframe.name;form.hidden=true;field.name='payload';field.type='hidden';field.value=JSON.stringify(p);form.append(field);document.body.append(iframe,form);
+    let timer,progressTimer,finished=false;const started=Date.now();
+    const cleanup=()=>{clearTimeout(timer);clearInterval(progressTimer);window.removeEventListener('message',received);form.remove();iframe.remove();setSubmissionBusy(false);};
+    const finish=text=>{if(finished)return;finished=true;cleanup();$('#saveStatus').textContent=text;};
+    const received=event=>{let origin;try{origin=new URL(event.origin);}catch{return;}if(!(origin.hostname==='script.google.com'||origin.hostname.endsWith('.googleusercontent.com')))return;
+      const reply=event.data;if(reply?.type!=='surveyReceipt'||reply.requestId!==p.requestId||finished)return;
+      if(reply.ok){submitted=true;submittedFamily=p.familyId;}
+      finish(reply.ok?(reply.emailSent?'已送出，填寫紀錄已寄至 '+p.email+'。收件編號：'+p.requestId:'調查已收件，但 Email 寄送失敗；請洽明鏡補寄。收件編號：'+p.requestId):'收件失敗：'+(reply.message||'請稍後再試'));
+    };
+    const showProgress=()=>{const seconds=Math.floor((Date.now()-started)/1000);$('#saveStatus').textContent=(p.attachment?'正在上傳同意書並送交資料':'正在送交資料')+'（'+seconds+'秒），請保持此頁開啟，勿重複送出。';};
+    window.addEventListener('message',received);showProgress();progressTimer=setInterval(showProgress,1000);
+    timer=setTimeout(async()=>{
+      clearInterval(progressTimer);$('#saveStatus').textContent='等待較久，正在確認是否已收件，請稍候…';
+      try{const state=await queryFamilyStatus(p.familyId);if(finished)return;if(state.submitted){submitted=true;submittedFamily=p.familyId;finish('已查到此家庭的收件紀錄，請勿重複送出。Email 寄送結果請留意信箱，或洽明鏡確認。');}else finish('目前尚未確認送達，填寫內容已保留。請改用穩定網路後重試；系統會沿用收件編號，避免重複紀錄。');}
+      catch{finish('連線逾時，尚無法確認送達，填寫內容已保留。請稍後按「帶入成員」確認是否已填寫，或洽明鏡協助。');}
+    },45000);
+    try{form.submit();}catch(error){finish('無法傳送資料，內容已保留，請稍後再試。');throw error;}
+  }
+
   if(config.backendUrl){
     $('#sendEmailButton').disabled=true;
     $('#sendEmailButton').textContent='送出並寄送填寫紀錄';
@@ -187,6 +213,7 @@
   $('#surveyForm').addEventListener('submit', async event => {
     const downloadOnly=event.submitter?.id === 'downloadBackup';
     event.preventDefault();
+    if(submissionBusy)return;
     if(!downloadOnly && (!familyStatusKnown||submittedFamily===family)){ $('#saveStatus').textContent=submittedFamily===family?'此家庭已填寫，請勿重複輸入。':'請先按「帶入成員」確認家庭填寫狀態。';return; }
     if(!downloadOnly && (submitted || !backendReady)){ $('#saveStatus').textContent=submitted?'本家庭已送出，請勿重複填寫。':'收件服務尚未就緒，請稍後再試。'; return; }
     if(!$('#surveyForm').reportValidity())return;
@@ -207,12 +234,22 @@
       if(portrait==='yes'){
         const file=$('#consentAttachment').files[0];
         if(!file || !['application/pdf','image/jpeg','image/png'].includes(file.type) || !file.size || file.size>10*1024*1024){$('#saveStatus').textContent='請選擇已簽署的PDF、JPG或PNG同意書（10MB以內）。';return;}
-        $('#sendEmailButton').disabled=true;
-        try{attachment={mime:file.type,data:await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);})};}catch{$('#sendEmailButton').disabled=false;$('#saveStatus').textContent='無法讀取檔案，請重新選擇。';return;}
       }
-      sendToCloud({confirmed:$('#confirmed').checked,attachment,familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members,annualChoice:annualChoice(),hasMembership:true,tents:Number($('#tents').value)});
+      setSubmissionBusy(true);
+      try{
+        if(portrait==='yes'){$('#saveStatus').textContent='正在讀取並準備同意書，請稍候…';attachment=await prepareConsent($('#consentAttachment').files[0]);}
+        await sendToCloud({confirmed:$('#confirmed').checked,attachment,familyId:family,reporter:$('#reporter').value.trim(),email:$('#reporterEmail').value.trim(),portrait,members:members.map(m=>({...m})),annualChoice:annualChoice(),hasMembership:true,tents:Number($('#tents').value)});
+      }catch(error){setSubmissionBusy(false);$('#saveStatus').textContent=error.message||'準備檔案失敗，內容已保留，請重新選擇檔案後再試。';}
     } else $('#saveStatus').textContent='Email 寄送尚未啟用，目前可先下載備份。';
   });
+  $('#surveyForm').addEventListener('invalid',()=>{
+    const labels={reporter:'填表人自然名',reporterEmail:'Email',familyId:'家庭編號',portrait:'肖像權意願',annualChoice:'年費處理方式',consentAttachment:'簽署同意書',confirmed:'資料確認'};
+    const missing=[...new Set([...$('#surveyForm').elements].filter(e=>e.willValidate&&!e.validity.valid).map(e=>{
+      const member=e.closest('.member-card');const title=member?.querySelector('.member-title')?.textContent||'';
+      return e.dataset.field?title+'的'+({name:'自然名',kind:'收費身分',plan:'出席方式',note:'到校／離校時間'}[e.dataset.field]||'資料'):(labels[e.id]||labels[e.name]||'必填資料');
+    }))];
+    if(missing.length)$('#saveStatus').textContent='請完成：'+missing.slice(0,6).join('、')+(missing.length>6?'等'+missing.length+'項資料':'')+'。';
+  },true);
   renderMembers();
 })();
 
