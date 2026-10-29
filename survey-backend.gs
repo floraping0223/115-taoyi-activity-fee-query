@@ -25,12 +25,20 @@ function sortReplies_(familySheet,memberSheet){
   if(familyCount>1)familySheet.getRange(2,1,familyCount,16).sort({column:1,ascending:true});
   if(memberCount>1)memberSheet.getRange(2,1,memberCount,12).sort({column:2,ascending:true});
 }
-function mailReceipt_(sheet,row,nonce,email,family,reporter,portrait,members,r,tents,annualChoice) {
+function membershipNumber_(ss,family){
+ const roster=ss.getSheetByName('分團名冊');
+ if(!roster)return '來源未提供';
+ const rows=roster.getRange(2,6,Math.max(roster.getLastRow()-1,1),2).getDisplayValues();
+ const values=[...new Set(rows.filter(row=>String(Number(row[0]))===family&&String(row[1]||'').trim()).map(row=>String(row[1]).trim()))];
+ if(values.length>1)throw new Error('此家庭會員編號有多筆不同資料，請洽明鏡確認');
+ return values[0]||'來源未提供';
+}
+function mailReceipt_(sheet,row,nonce,email,family,reporter,portrait,members,r,tents,annualChoice,memberNumber) {
   const status=sheet.getRange(row,16).getValue();
   if(status==='已寄送')return {type:'surveyReceipt',requestId:nonce,ok:true,emailSent:true};
   const money=n=>'NT$ '+n.toLocaleString('zh-TW');
   const kind={child:'各團團員（小孩）',adult:'成人／非團員',free:'大班以下（免費）'};
-  const lines=['115年11月入團儀典宿營調查','填表人自然名：'+reporter,'家庭編號：'+family,'肖像權授權：'+(portrait==='yes'?'我同意':'我不同意'),'收件編號：'+nonce,'',...r.people.flatMap(m=>[m.name+'｜'+kind[m.kind]+'｜'+SurveyRules.plans.find(p=>p.id===m.plan).label,'活動費 '+money(m.fees.camp)+'／入團費 '+money(m.fees.joining)+'／小計 '+money(m.fees.total),'餐宿調整：'+([m.noDinner&&'不用晚餐',m.noBreakfast&&'不用早餐',m.noStay&&'不住宿（不含車宿）'].filter(Boolean).join('、')||'依方案'),'備註：'+(m.note||'無'),'']),'活動費合計：'+money(r.camp),'入團費合計：'+money(r.joining),'116年費處理方式：'+ANNUAL_OPTIONS[annualChoice],'116年家庭會員年費：'+(annualChoice==='collect'?money(r.annual):'待審核（未計入預估總額）'),'露營帳位：'+tents+'帳，'+money(r.tentFee),'家庭預估總額：'+money(r.total),'','本信為調查填寫紀錄，並非繳費完成證明。'];
+  const lines=['115年11月入團儀典宿營調查','填表人自然名：'+reporter,'家庭編號：'+family,'會員編號：'+memberNumber,'肖像權授權：'+(portrait==='yes'?'我同意':'我不同意'),'收件編號：'+nonce,'',...r.people.flatMap(m=>[m.name+'｜'+kind[m.kind]+'｜'+SurveyRules.plans.find(p=>p.id===m.plan).label,'活動費 '+money(m.fees.camp)+'／入團費 '+money(m.fees.joining)+'／小計 '+money(m.fees.total),'餐宿調整：'+([m.noDinner&&'不用晚餐',m.noBreakfast&&'不用早餐',m.noStay&&'不住宿（不含車宿）'].filter(Boolean).join('、')||'依方案'),'備註：'+(m.note||'無'),'']),'活動費合計：'+money(r.camp),'入團費合計：'+money(r.joining),'116年費處理方式：'+ANNUAL_OPTIONS[annualChoice],'116年家庭會員年費：'+(annualChoice==='collect'?money(r.annual):'待審核（未計入預估總額）'),'露營帳位：'+tents+'帳，'+money(r.tentFee),'家庭預估總額：'+money(r.total),'','本信為調查填寫紀錄，並非繳費完成證明。'];
   try {
     if(MailApp.getRemainingDailyQuota()<1)throw new Error('今日寄信額度已用完');
     MailApp.sendEmail({to:email,subject:'115年11月入團儀典宿營調查｜家庭'+family+'填寫紀錄',body:lines.join('\n'),name:'桃園親子一團'});
@@ -47,12 +55,12 @@ function doPost(e) {
     if (!e.parameter.payload || e.parameter.payload.length>14500000) throw new Error('資料格式錯誤');
     const p=JSON.parse(e.parameter.payload);nonce=cleanText_(p.requestId,80);
     if (!/^[a-zA-Z0-9-]+$/.test(nonce)) throw new Error('收件編號錯誤');
-    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyStatusSupported:true,annualChoiceSupported:true});
+    if(p.action==='capabilities')return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyStatusSupported:true,annualChoiceSupported:true,membershipNumberSupported:true});
     if(p.action==='familyStatus'){
       const id=cleanText_(p.familyId,8);if(!/^[1-9][0-9]*$/.test(id))throw new Error('家庭編號錯誤');
-      const sheet=SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('家庭總表');
+      const book=SpreadsheetApp.openById(SPREADSHEET_ID),sheet=book.getSheetByName('家庭總表');
       const ids=sheet.getRange(2,1,Math.max(sheet.getLastRow()-1,1),1).getValues().flat();
-      return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyId:id,submitted:ids.some(value=>String(Number(value))===id)});
+      return reply_({type:'surveyReceipt',requestId:nonce,ok:true,familyId:id,memberNumber:membershipNumber_(book,id),submitted:ids.some(value=>String(Number(value))===id)});
     }
     if(p.confirmed!==true)throw new Error('請確認所有家庭成員與費用明細');
     const family=cleanText_(p.familyId,8);if(!/^[1-9][0-9]*$/.test(family)) throw new Error('家庭編號錯誤');
@@ -73,12 +81,13 @@ function doPost(e) {
     const r=SurveyRules.calculate(family,members,p.hasMembership,p.tents);
     lock.waitLock(20000);
     const ss=SpreadsheetApp.openById(SPREADSHEET_ID), f=ss.getSheetByName('家庭總表'), d=ss.getSheetByName('成員明細');
+    const memberNumber=membershipNumber_(ss,family);
     const receipts=f.getRange(2,12,Math.max(f.getLastRow()-1,1),1).getValues().flat();
     const previous=receipts.indexOf(nonce);
     if(previous>=0){
       const row=previous+2;
       if(String(f.getRange(row,1).getValue())!==family||String(f.getRange(row,15).getValue())!==email)throw new Error('收件編號與 Email 不一致');
-      return reply_(mailReceipt_(f,row,nonce,email,family,reporter,p.portrait,members,r,p.tents,p.annualChoice));
+      return reply_(mailReceipt_(f,row,nonce,email,family,reporter,p.portrait,members,r,p.tents,p.annualChoice,memberNumber));
     }
     const familyIds=f.getRange(2,1,Math.max(f.getLastRow()-1,1),1).getValues().flat();
     if(familyIds.some(id=>String(Number(id))===family))throw new Error('此家庭編號已送出，請勿重複填寫；如需修改請聯絡主辦單位');
@@ -97,9 +106,9 @@ function doPost(e) {
     const annualReceipts=annualSheet.getRange(2,1,Math.max(annualSheet.getLastRow()-1,1),1).getValues().flat();
     if(!annualReceipts.includes(nonce))annualSheet.getRange(nextDataRow_(annualSheet),1,1,6).setValues([[nonce,Number(family),ANNUAL_OPTIONS[p.annualChoice],p.annualChoice==='collect'?'由團代收':'待審核',r.annual,new Date()]]);
     const receiptRow=nextDataRow_(f);
-    f.getRange(receiptRow,1,1,16).setValues([[Number(family),cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意','有會員編號',p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
+    f.getRange(receiptRow,1,1,16).setValues([[Number(family),cellText_(reporter),p.portrait==='yes'?'我同意':'我不同意',cellText_(memberNumber),p.tents,r.camp,r.joining,r.annual,r.tentFee,r.total,new Date(),nonce,uploadUrl,'已收到',cellText_(email),'待寄送']]);
     SpreadsheetApp.flush();
-    const response=mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents,p.annualChoice);
+    const response=mailReceipt_(f,receiptRow,nonce,email,family,reporter,p.portrait,members,r,p.tents,p.annualChoice,memberNumber);
     sortReplies_(f,d);
     return reply_(response);
   }catch(error){return reply_({type:'surveyReceipt',requestId:nonce,ok:false,message:String(error.message||'收件失敗')});}

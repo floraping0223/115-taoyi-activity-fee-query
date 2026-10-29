@@ -62,6 +62,7 @@
       const status=await queryFamilyStatus(id);
       if(current!==familyRequest||normalize($('#familyId').value)!==id)return;
       familyStatusKnown=true;submittedFamily=status.submitted?id:'';
+      $('#annualMemberNumber').textContent=status.memberNumber||'來源未提供';
       $('#sendEmailButton').disabled=!backendReady||status.submitted;
       if(status.submitted){family=id;members=[];$('#tents').value='0';$('#confirmed').checked=false;renderMembers();$('#familyStatus').style.color='#c62828';$('#familyStatus').textContent='此家庭已填寫，請勿重複輸入。若需修改請洽明鏡，待整筆刪除後再重新填寫。';return;}
     }catch{if(current===familyRequest){$('#familyStatus').textContent='暫時無法確認填寫狀態，請稍後再按「帶入成員」。若持續發生，請洽明鏡確認收件程式已更新部署。';}return;}
@@ -81,6 +82,7 @@
   }
   $('#loadFamily').addEventListener('click', loadFamily);
   $('#familyId').addEventListener('input', () => {
+    $('#annualMemberNumber').textContent='帶入家庭成員後顯示';
     familyRequest++;familyStatusKnown=false;submittedFamily='';$('#loadFamily').disabled=false;$('#sendEmailButton').disabled=true;$('#familyStatus').style.color='';
     if (normalize($('#familyId').value) !== family) {
       family = ''; members = []; $('#tents').value = '0'; $('#confirmed').checked = false;
@@ -176,7 +178,7 @@
     const finish=()=>{clearTimeout(checkTimer);window.removeEventListener('message',check);form.remove();frame.remove();};
     const check=e=>{let origin;try{origin=new URL(e.origin);}catch{return;}if(!(origin.hostname==='script.google.com'||origin.hostname.endsWith('.googleusercontent.com')))return;
       if(e.data?.requestId!==nonce)return;
-      backendReady=e.data.ok===true&&e.data.version>=2&&e.data.annualChoiceSupported===true;finish();$('#sendEmailButton').disabled=!backendReady||!familyStatusKnown||submittedFamily===family;
+      backendReady=e.data.ok===true&&e.data.version>=2&&e.data.annualChoiceSupported===true&&e.data.membershipNumberSupported===true;finish();$('#sendEmailButton').disabled=!backendReady||!familyStatusKnown||submittedFamily===family;
       $('#saveStatus').textContent=backendReady?'每個家庭編號限送出一次。必填資料完整，且同意者已選擇簽署檔案後，才能送出。':'收件服務待更新，暫停送出。主辦單位需將最新版收件程式更新部署。';
     };
     window.addEventListener('message',check);checkTimer=setTimeout(()=>{finish();$('#saveStatus').textContent='無法確認收件服務，請稍後重新整理。';},30000);form.submit();
@@ -195,7 +197,7 @@
     if (new Set(names).size !== names.length) { $('#saveStatus').textContent = '家庭成員自然名重複，請確認名冊。'; return; }
     const r = result();
     const portrait = document.querySelector('[name=portrait]:checked')?.value;
-    const lines = ['115年11月入團儀典宿營調查',`填表人自然名：${$('#reporter').value.trim()}`,`填寫者 Email：${$('#reporterEmail').value.trim()}`,`家庭編號：${family}`,`肖像權授權：${portrait === 'yes' ? '我同意' : '我不同意'}`,'',...r.people.flatMap(m => [`${m.name.trim()}｜${kinds[m.kind]}｜${rules.plans.find(p => p.id === m.plan).label}`,`  活動費 ${money(m.fees.camp)}／入團費 ${money(m.fees.joining)}／小計 ${money(m.fees.total)}`,`  餐宿調整：${[m.noDinner && '不用晚餐', m.noBreakfast && '不用早餐', m.noStay && '不住宿（不含車宿）'].filter(Boolean).join('、') || '依方案'}`,`  備註：${m.note.trim() || '無'}`]),'',`活動費合計：${money(r.camp)}`,`入團費合計：${money(r.joining)}`,`116年費處理方式：${annualLabel()}`,`116年家庭會員年費：${annualDisplay(r)}`,`露營帳位：${$('#tents').value} 帳，${money(r.tentFee)}`,`家庭預估總額：${money(r.total)}`,'','此檔案為填寫結果留存，尚未送交主辦單位。'];
+    const lines = ['115年11月入團儀典宿營調查',`填表人自然名：${$('#reporter').value.trim()}`,`填寫者 Email：${$('#reporterEmail').value.trim()}`,`家庭編號：${family}`,`肖像權授權：${portrait === 'yes' ? '我同意' : '我不同意'}`,'',...r.people.flatMap(m => [`${m.name.trim()}｜${kinds[m.kind]}｜${rules.plans.find(p => p.id === m.plan).label}`,`  活動費 ${money(m.fees.camp)}／入團費 ${money(m.fees.joining)}／小計 ${money(m.fees.total)}`,`  餐宿調整：${[m.noDinner && '不用晚餐', m.noBreakfast && '不用早餐', m.noStay && '不住宿（不含車宿）'].filter(Boolean).join('、') || '依方案'}`,`  備註：${m.note.trim() || '無'}`]),'',`活動費合計：${money(r.camp)}`,`入團費合計：${money(r.joining)}`,`會員編號：${$('#annualMemberNumber').textContent}`,`116年費處理方式：${annualLabel()}`,`116年家庭會員年費：${annualDisplay(r)}`,`露營帳位：${$('#tents').value} 帳，${money(r.tentFee)}`,`家庭預估總額：${money(r.total)}`,'','此檔案為填寫結果留存，尚未送交主辦單位。'];
     if(event.submitter?.id === 'downloadBackup') {
       const blob = new Blob(['\ufeff'+lines.join('\r\n')], {type:'text/plain;charset=utf-8'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='115年11月宿營調查_家庭'+family+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
