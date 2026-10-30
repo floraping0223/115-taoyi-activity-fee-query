@@ -24,7 +24,7 @@ function paymentLookup_(id){
  if(!amounts.every(paymentAmount_))return{state:'pending',familyId:id,message:'核定費用尚待確認，請暫勿匯款。'};
  const total=amounts.reduce((a,b)=>a+b,0),note=String(review['公開調整說明']||'').trim();
  if(!Number.isSafeInteger(total)||(total!==Number(original['應繳總額'])&&!note))return{state:'pending',familyId:id,message:'調整說明尚待確認，請暫勿匯款。'};
- const members=paymentTable_('成員明細').rows.filter(r=>String(Number(r['家庭編號']))===id&&String(r['收件編號'])===receipt).map(r=>({name:String(r['自然名']||''),group:String(r['本人分團']||''),plan:String(r['出席方式']||''),arrangements:[r['不用晚餐']==='是'?'不用晚餐':'',r['不用早餐']==='是'?'不用早餐':'',r['不住宿']==='是'?'不住宿（不含車宿）':''].filter(Boolean).join('、')||'依出席方案',note:String(r._display[8]||'')}));
+ const members=paymentTable_('成員明細').rows.filter(r=>String(Number(r['家庭編號']))===id&&String(r['收件編號'])===receipt).map(r=>({name:String(r['自然名']||''),kind:String(r['收費身分']||''),activityFee:r['活動費'],joiningFee:r['入團費'],group:String(r['本人分團']||''),plan:String(r['出席方式']||''),arrangements:[r['不用晚餐']==='是'?'不用晚餐':'',r['不用早餐']==='是'?'不用早餐':'',r['不住宿']==='是'?'不住宿（不含車宿）':''].filter(Boolean).join('、')||'依出席方案',note:String(r._display[8]||'')}));
  if(!members.length)return{state:'pending',familyId:id,message:'成員資料尚待確認，請暫勿匯款。'};
  const version=paymentHash_({id,receipt,amounts,note});
  const reported=paymentTable_('宿營匯款回報').rows.some(r=>String(Number(r['家庭編號']))===id);
@@ -54,7 +54,11 @@ function doPost(e){
   const date=String(p.date||'');const parsed=new Date(date+'T00:00:00Z');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==date||date>Utilities.formatDate(new Date(),'Asia/Taipei','yyyy-MM-dd'))throw Error('匯款日期不正確或晚於今天');
   if(current.total===0)throw Error('核定金額為0，不需匯款');
-  table.sheet.appendRow([new Date(),Number(family),date,actual,"'"+String(p.lastFive),current.total,current.receipt,current.version,nonce,'待對帳']);
+  const original=paymentTable_('家庭總表').rows.find(r=>String(Number(r['家庭編號']))===family);
+  const member=original?String(original['會員編號']||''):'';
+  const record={'回報時間':new Date(),'家庭編號':Number(family),'會員編號':member?"'"+member:'','匯款日期':date,'實際匯款金額':actual,'轉帳後五碼':"'"+String(p.lastFive),'核定應繳總額':current.total,'對應收件編號':current.receipt,'核定版本':current.version,'回報編號':nonce,'對帳狀態':'待對帳'};
+  const reportHeaders=table.sheet.getRange(1,1,1,table.sheet.getLastColumn()).getValues()[0].map(String);
+  table.sheet.appendRow(reportHeaders.map(h=>Object.prototype.hasOwnProperty.call(record,h)?record[h]:''));
   SpreadsheetApp.flush();return paymentReply_(nonce,{ok:true,alreadyReported:false});
  }catch(error){return paymentReply_(nonce,{ok:false,message:String(error.message||'查詢失敗，請稍後再試')});}
  finally{if(lock&&lock.hasLock())lock.releaseLock();}

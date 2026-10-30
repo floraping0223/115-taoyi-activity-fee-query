@@ -22,7 +22,11 @@ function render(result){
  current=result;$('#paymentStatus').hidden=true;$('#approvedPanel').hidden=false;$('#approvedFamily').textContent=result.familyId;$('#approvedTotal').textContent=money(result.total);
  for(const item of result.items){const row=document.createElement('div');row.className='fee-row';const label=document.createElement('span'),amount=document.createElement('strong');label.textContent=item.label;amount.textContent=money(item.amount);row.append(label,amount);$('#feeItems').append(row);}
  $('#adjustmentNote').hidden=!result.note;$('#adjustmentNote').textContent='核定調整說明：'+(result.note||'');
- for(const person of result.members||[]){const article=document.createElement('article');article.className='member-plan';const title=document.createElement('strong'),plan=document.createElement('p'),note=document.createElement('p');title.textContent=person.name+(person.group?' · '+person.group:'');plan.textContent=person.plan+'｜'+person.arrangements;note.textContent='到離校／補充說明：'+(person.note||'無');article.append(title,plan,note);$('#memberPlans').append(article);}
+ for(const person of result.members||[]){const article=document.createElement('article');article.className='member-plan';const title=document.createElement('strong'),plan=document.createElement('p'),note=document.createElement('p');title.textContent=person.name+(person.group?' · '+person.group:'');plan.textContent=person.plan+'｜'+person.arrangements;note.textContent='到離校／補充說明：'+(person.note||'無');article.append(title,plan);
+ if(person.kind){const identity=document.createElement('p');identity.textContent='收費身分：'+person.kind;article.append(identity);}
+ if(Number.isSafeInteger(person.activityFee)&&person.activityFee>=0){const fee=document.createElement('p');fee.textContent='原填活動費：'+money(person.activityFee)+'（入團費另計）';article.append(fee);}else{const fee=document.createElement('p');fee.className='muted';fee.textContent='個人活動費明細待服務更新；應繳金額以上方人工核定為準。';article.append(fee);}
+ if(Number.isSafeInteger(person.joiningFee)&&person.joiningFee>0){const joining=document.createElement('p');joining.textContent='入團費：'+money(person.joiningFee)+'（已列入上方入團費，無須重複加總）';article.append(joining);}
+ article.append(note);$('#memberPlans').append(article);}
  $('#bankPanel').hidden=result.total===0;
  if(result.total>0){$('#bankName').textContent=result.bank.bank;$('#bankAccount').textContent=result.bank.account;$('#bankHolder').textContent=result.bank.holder;}
  $('#reportFamily').value=result.familyId;$('#reportAmount').value=result.total||'';
