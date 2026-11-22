@@ -14,7 +14,7 @@ const SHEETS = {
 };
 
 const SPREADSHEET_ID = "1t52809HqGSPSdskrF-4-dJM7gMFPaTtc2u5aFNLxfP4";
-const SNAPSHOT_CACHE_PREFIX_ = "taoyiBackendSnapshotV4";
+const SNAPSHOT_CACHE_PREFIX_ = "taoyiBackendSnapshotV5";
 const SNAPSHOT_CACHE_SECONDS_ = 30;
 const SNAPSHOT_CACHE_CHUNK_SIZE_ = 80000;
 
@@ -35,7 +35,7 @@ const HEADERS = {
   [SHEETS.members]: ["人員ID", "家庭編號", "自然名", "屬性", "分團", "小隊", "所屬分團", "育成鷹資格", "啟用", "備註"],
   [SHEETS.events]: ["場次", "活動日期", "活動名稱", "會前確認開放", "現場點名開放", "育成鷹團分流", "全年總表開放", "狀態", "備註"],
   [SHEETS.pre]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "預計時段", "活動去向", "請假事由", "回覆時間"],
-  [SHEETS.onsite]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "主要點名群組", "小隊", "現場狀態", "上午實到", "下午13:00實到", "遲到", "下午遲到", "臨時出席", "備註", "點名人員", "更新時間", "點名時段"],
+  [SHEETS.onsite]: ["場次", "人員ID", "家庭編號", "自然名", "屬性", "主要點名群組", "小隊", "現場狀態", "上午實到", "下午13:00實到", "遲到", "下午遲到", "臨時出席", "備註", "點名人員", "更新時間", "點名時段", "公假時段"],
   [SHEETS.splits]: ["場次", "分流名稱", "啟用", "資格規則", "主要點名群組", "備註"],
   [SHEETS.work]: ["場次", "人員ID", "家庭編號", "自然名", "主要點名群組", "小隊", "預計時段", "支援團隊", "職務註記", "工作分配", "備註"],
   [SHEETS.rules]: ["狀態", "缺席權重", "適用對象", "備註"],
@@ -177,7 +177,7 @@ function writeSnapshot_(payload) {
     const statusText = String(record.status || "");
     return [record.eventId, record.memberId, member.familyId || "", member.name || "", member.role || "",
       group, squad, record.status || "", yes_(record.am), yes_(record.pm), yes_(statusText === "遲到"), yes_(statusText === "下午遲到"),
-      yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || "", checkinPeriodLabel_(period)];
+      yes_(String(record.memberId || "").indexOf("guest-") === 0), record.note || "", submission.recorder || "", submission.submittedAt || payload.syncedAt || "", checkinPeriodLabel_(period), ""];
   }) : [];
   const checkinAppend = appendUniqueRows_(SHEETS.onsite, checkinRows, row => [row[0], row[1], row[16] || "上午"].join("|"), { replaceExisting: false });
 
@@ -390,6 +390,7 @@ function readCheckinReplies_() {
       submittedAt: formatDateTimeValue_(row[15]),
       syncedAt: formatDateTimeValue_(row[15]),
       period: row[16] || "",
+      publicLeavePeriod: row[17] || "",
     }))
     .filter(row => row.eventId && row.memberId);
 }
@@ -614,6 +615,15 @@ function annualStatus_(record) {
   const status = normalizePartialLeaveStatus_(record.status || "");
   const expected = normalizePartialLeaveStatus_(record.expected || "");
   if (expected === "公假") return "公假";
+  const leave = String(record.publicLeavePeriod || "").trim();
+  if (leave === "全天") return "公假";
+  if (leave === "上午" || leave === "下午") {
+    const base = annualStatus_(Object.assign({}, record, { publicLeavePeriod: "" }));
+    if (base === "公假") return base;
+    const otherPresent = base === "出席" || base === "全天出席" || base === "遲到"
+      || (leave === "上午" ? base === "上午請假" : base === "下午請假");
+    return leave + "公假" + (otherPresent ? "" : "/另半天缺席");
+  }
   const am = hasMorningFlag_(record);
   const pm = hasAfternoonFlag_(record);
   if (status && status !== "未確認") {
@@ -632,10 +642,19 @@ function annualStatus_(record) {
 }
 
 function recordWeight_(status, rules) {
+  if (/^(上午|下午)公假/.test(status)) return status.indexOf("缺席") >= 0 ? 0.5 : 0;
   return Number(rules[status] != null ? rules[status] : DEFAULT_RULE_WEIGHTS_[status] || 0);
 }
 
 function updateAnnualCounts_(counts, status) {
+  if (/^(上午|下午)公假/.test(status)) {
+    counts.publicLeave += 0.5;
+    if (status.indexOf("缺席") >= 0) {
+      if (status.indexOf("上午") === 0) counts.morning += 1;
+      else counts.afternoon += 1;
+    }
+    return;
+  }
   if (status === "出席" || status === "全天出席") counts.normal += 1;
   if (status === "遲到") counts.late += 1;
   if (status === "下午請假") counts.morning += 1;
@@ -741,6 +760,7 @@ function readWorkAssignments_() {
 }
 
 function mergeCheckinIntoRecord_(record, reply) {
+  if (reply.publicLeavePeriod) record.publicLeavePeriod = reply.publicLeavePeriod;
   record.status = reply.status || record.status || "未確認";
   record.note = reply.note || record.note || "";
   if (reply.period === "全場" || reply.period === "full") {

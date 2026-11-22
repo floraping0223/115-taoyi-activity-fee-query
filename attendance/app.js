@@ -446,6 +446,7 @@ function mergeBackendSnapshot(payload, options = {}) {
     const member = state.members.find((item) => item.id === reply.memberId);
     if (!member) return;
     const record = getRecord(reply.memberId, reply.eventId);
+    if (reply.publicLeavePeriod) record.publicLeavePeriod = reply.publicLeavePeriod;
     const replyPeriod = periodKeyFromLabel(reply.period, reply.group);
     if (replyPeriod === "full") {
       applySingleCheckinStatus(record, reply.status || "未確認");
@@ -577,6 +578,7 @@ function resetCheckinReplyRecords(eventId) {
   let changed = false;
   Object.values(state.records || {}).forEach((record) => {
     if (record.eventId !== eventId) return;
+    if (mergeRecordField(record, "publicLeavePeriod", "")) changed = true;
     if (mergeRecordField(record, "status", "未確認")) changed = true;
     if (mergeRecordField(record, "am", false)) changed = true;
     if (mergeRecordField(record, "pm", false)) changed = true;
@@ -1915,10 +1917,19 @@ function applySingleCheckinStatus(record, status) {
 }
 
 function recordWeight(status) {
+  if (/^(上午|下午)公假/.test(status)) return status.includes("缺席") ? 0.5 : 0;
   return Number(state.rules[status] ?? DEFAULT_RULES[status] ?? 0);
 }
 
 function updateAnnualCounts(counts, status) {
+  if (/^(上午|下午)公假/.test(status)) {
+    counts.publicLeave += 0.5;
+    if (status.includes("缺席")) {
+      if (status.startsWith("上午")) counts.morning += 1;
+      else counts.afternoon += 1;
+    }
+    return;
+  }
   if (status === "出席" || status === "全天出席") counts.normal += 1;
   if (status === "遲到") counts.late += 1;
   if (isAfternoonLeave(status)) counts.morning += 1;
@@ -1931,6 +1942,15 @@ function annualStatus(record) {
   const status = normalizePartialLeaveStatus(record.status);
   const expected = normalizePartialLeaveStatus(record.expected);
   if (expected === "公假") return "公假";
+  const leave = String(record.publicLeavePeriod || "").trim();
+  if (leave === "全天") return "公假";
+  if (leave === "上午" || leave === "下午") {
+    const base = annualStatus({ ...record, publicLeavePeriod: "" });
+    if (base === "公假") return base;
+    const otherPresent = ["出席", "全天出席", "遲到"].includes(base)
+      || (leave === "上午" ? base === "上午請假" : base === "下午請假");
+    return `${leave}公假${otherPresent ? "" : "/另半天缺席"}`;
+  }
   const flags = { am: Boolean(record.am) || Boolean(record.amLate), pm: Boolean(record.pm) || Boolean(record.pmLate) };
   if (status && status !== "未確認") {
     const periods = attendancePeriods(record);
